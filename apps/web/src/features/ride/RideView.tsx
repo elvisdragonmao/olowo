@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useUiStore } from "../../app/useUiStore";
 import { apiRequest, idempotencyKey } from "../../shared/api";
 import { clock, durationLabel, timeOfDay } from "../../shared/format";
+import { useLocationStore } from "../location/useLocationStore";
 import { automationLabels, DurationPicker, type AutomationAction } from "./automation";
 import { useCurrentRide, useNow, type ActiveRide } from "./useCurrentRide";
 
@@ -19,7 +20,7 @@ type Estimate = { cost: number; ridingMinutes: number; parkedMinutes: number; ra
 
 const actions: Array<{ value: AutomationAction; detail: string; icon: typeof Power }> = [
 	{ value: "return", detail: "到時結束騎乘", icon: Power },
-	{ value: "return_and_reborrow", detail: "歸還後立刻重借同一台", icon: Repeat }
+	{ value: "return_and_reborrow", detail: "歸還、空白照片結帳，再借同一台", icon: Repeat }
 ];
 
 export function RideView() {
@@ -84,8 +85,15 @@ function RideDetail({ ride }: { ride: ActiveRide }) {
 		mutationFn: () => apiRequest(`/v1/rides/${ride.id}/automation`, { method: "DELETE" }),
 		onSuccess: () => queryClient.setQueryData(["ride", ride.id, "automation"], { automation: null })
 	});
+	const position = useLocationStore(state => state.position);
+	// The phone's location prices the return like the official app; without it the API uses the scooter's own GPS.
 	const returnRide = useMutation({
-		mutationFn: () => apiRequest(`/v1/rides/${ride.id}/return`, { method: "POST", headers: { "idempotency-key": idempotencyKey() }, body: JSON.stringify({ scooterId: ride.scooterId }) }),
+		mutationFn: () =>
+			apiRequest(`/v1/rides/${ride.id}/return`, {
+				method: "POST",
+				headers: { "idempotency-key": idempotencyKey() },
+				body: JSON.stringify({ scooterId: ride.scooterId, ...(position ? { latitude: position.latitude, longitude: position.longitude } : {}) })
+			}),
 		onSuccess: async () => {
 			await Promise.all(["ride", "fleet"].map(key => queryClient.invalidateQueries({ queryKey: [key] })));
 			navigate({ kind: "checkout" }, { replace: true });
@@ -111,7 +119,7 @@ function RideDetail({ ride }: { ride: ActiveRide }) {
 					<div>
 						<strong>
 							{task.state === "scheduled"
-								? `${taskLabel} · 剩 ${clock((Date.parse(task.triggerAt) - now) / 1000)}`
+								? `騎乘滿 ${durationLabel(Math.round((Date.parse(task.triggerAt) - Date.parse(ride.startedAt)) / 1000))} 時${taskLabel} · 還有 ${clock((Date.parse(task.triggerAt) - now) / 1000)}`
 								: task.state === "running"
 									? "正在執行…"
 									: task.state === "completed"
@@ -147,7 +155,8 @@ function RideDetail({ ride }: { ride: ActiveRide }) {
 					{confirmAutomation ? (
 						<div className="confirm-card" role="alertdialog" aria-label="確認騎乘計時">
 							<p>
-								騎乘 {durationLabel(afterRideSeconds)} 時會{action === "return_and_reborrow" ? "歸還並立刻重借，開始下一段計費" : "直接歸還並結束騎乘"}。
+								騎乘滿 {durationLabel(afterRideSeconds)} 時會
+								{action === "return_and_reborrow" ? "歸還，用空白照片和你的第一張信用卡結帳，再重借同一台（開始下一段計費）" : "直接歸還並結束騎乘，之後再拍照結帳"}。
 							</p>
 							<div className="button-pair">
 								<button type="button" className="button button-quiet" onClick={() => setConfirmAutomation(false)}>
@@ -169,7 +178,7 @@ function RideDetail({ ride }: { ride: ActiveRide }) {
 
 			<section className="section">
 				<h3 className="section-title">歸還</h3>
-				<p className="muted small">停進站點格位並上鎖後再歸還；歸還後會請你拍還車照片並付款。</p>
+				<p className="muted small">停進站點格位並上鎖後再歸還，按下就停止計費。還車位置用{position ? "你手機的定位" : "車輛自己的 GPS（開啟定位會改用手機定位）"}。</p>
 				{confirmReturn ? (
 					<div className="confirm-card" role="alertdialog" aria-label="確認歸還">
 						<p>確認 {ride.label} 已停妥並上鎖？送出後立即結束騎乘。</p>

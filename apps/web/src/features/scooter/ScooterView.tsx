@@ -178,7 +178,11 @@ function BorrowActions({ scooter }: { scooter: ScooterSummary }) {
 
 	const borrowable = scooter.availability === "available" || (ownReservation != null && scooter.reasons.every(reason => reason === "reserved"));
 	const consequence =
-		automation === "return" ? `，騎乘 ${durationLabel(rideTimer)} 時自動歸還` : automation === "return_and_reborrow" ? `，騎乘 ${durationLabel(rideTimer)} 時歸還並立刻重借（開始下一段計費）` : "";
+		automation === "return"
+			? `，騎乘滿 ${durationLabel(rideTimer)} 時自動歸還`
+			: automation === "return_and_reborrow"
+				? `，騎乘滿 ${durationLabel(rideTimer)} 時歸還、以空白照片自動結帳後重借（開始下一段計費）`
+				: "";
 
 	return (
 		<>

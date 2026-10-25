@@ -79,6 +79,27 @@ test("anonymous riders sign in before stations load", async ({ page }) => {
 	expect(errors.filter(error => !error.includes("401"))).toEqual([]);
 });
 
+test("the sign-in sheet stays on screen when the keyboard shrinks the viewport", async ({ page }, testInfo) => {
+	test.skip(testInfo.project.name !== "mobile", "the on-screen keyboard only matters on phones");
+	await open(page, "/", { authenticated: false });
+	const email = panel(page).getByLabel("Email");
+	await email.focus();
+	await expect(page.locator(".panel-sheet")).toHaveAttribute("data-snap", "full");
+	const size = page.viewportSize()!;
+	// Android resizes the layout viewport for the keyboard (interactive-widget=resizes-content).
+	await page.setViewportSize({ width: size.width, height: Math.round(size.height * 0.55) });
+	await expect
+		.poll(async () => {
+			const sheet = await page.locator(".panel-sheet").boundingBox();
+			const field = await email.boundingBox();
+			const height = page.viewportSize()!.height;
+			return Boolean(sheet && field && sheet.y >= 0 && sheet.y + sheet.height <= height + 1 && field.y >= 0 && field.y + field.height <= height);
+		})
+		.toBe(true);
+	const overflow = await page.evaluate(() => document.documentElement.scrollHeight - document.documentElement.clientHeight);
+	expect(overflow).toBeLessThanOrEqual(0);
+});
+
 test("counts follow the campus on screen and empty stations sink to the bottom", async ({ page }) => {
 	await open(page);
 	const rows = panel(page).locator(".station-row");
@@ -172,7 +193,7 @@ test("reserve with a countdown, borrow with a timer, return, photo and pay", asy
 	await panel(page).getByRole("radio", { name: "歸還後重借" }).click();
 	await panel(page).getByRole("radio", { name: "28 秒" }).click();
 	await panel(page).getByRole("button", { name: "借用預約的車" }).click();
-	await expect(panel(page).getByText(/28 秒 時歸還並立刻重借/)).toBeVisible();
+	await expect(panel(page).getByText(/騎乘滿 28 秒 時歸還、以空白照片自動結帳後重借/)).toBeVisible();
 	await panel(page).getByRole("button", { name: "確認借用" }).click();
 
 	await expect(page).toHaveURL(/view=ride/);
@@ -186,9 +207,9 @@ test("reserve with a countdown, borrow with a timer, return, photo and pay", asy
 	await panel(page).getByRole("radio", { name: "自訂" }).click();
 	await panel(page).getByLabel("時長（分:秒）").fill("3:28");
 	await panel(page).getByRole("button", { name: "設定自動歸還" }).click();
-	await expect(panel(page).getByText(/3:28 時會直接歸還/)).toBeVisible();
+	await expect(panel(page).getByText(/騎乘滿 3:28 時會直接歸還/)).toBeVisible();
 	await panel(page).getByRole("button", { name: "確認設定" }).click();
-	await expect(panel(page).getByText(/自動歸還 · 剩/)).toBeVisible();
+	await expect(panel(page).getByText(/騎乘滿 3:28 時自動歸還 · 還有/)).toBeVisible();
 	expect(api.requests.find(request => request.method === "PUT")?.body).toEqual({ action: "return", afterRideSeconds: 208 });
 	await page.screenshot({ path: test.info().outputPath("ride.png") });
 
@@ -197,12 +218,15 @@ test("reserve with a countdown, borrow with a timer, return, photo and pay", asy
 	await expect(page).toHaveURL(/view=checkout/);
 	await expect(panel(page).locator(".bill-total")).toHaveText("$9");
 	await expect(panel(page).getByRole("button", { name: "付款 $9" })).toBeDisabled();
+	await expect(panel(page).getByText(/停止計費 · 還在工程三館/)).toBeVisible();
+	await panel(page).getByRole("button", { name: "上傳空白照片（1×1 PNG）" }).click();
+	await expect(panel(page).getByText("已上傳空白照片，點此改拍")).toBeVisible();
 	await panel(page).getByLabel("拍攝還車照片").setInputFiles(samplePhoto);
 	await expect(panel(page).getByText("已上傳，點此重拍")).toBeVisible();
 	await page.screenshot({ path: test.info().outputPath("checkout.png") });
 	await panel(page).getByRole("button", { name: "付款 $9" }).click();
 	await expect(panel(page).getByRole("heading", { name: "已完成付款" })).toBeVisible();
-	expect(api.photoUploads).toBe(1);
+	expect(api.photoUploads).toBe(2);
 	expect(api.checkout).toEqual({ imageId: 777, cardId: 154060, useOlooCoin: true });
 	expect(errors.filter(error => !error.includes("401"))).toEqual([]);
 });

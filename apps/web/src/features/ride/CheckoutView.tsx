@@ -4,10 +4,19 @@ import { useEffect, useState } from "react";
 import { useUiStore } from "../../app/useUiStore";
 import { apiRequest, idempotencyKey } from "../../shared/api";
 import { timeOfDay } from "../../shared/format";
-import { useLocationStore } from "../location/useLocationStore";
+import { stationLabel } from "../fleet/model";
 import { useUnpaidRide, type UnpaidRide } from "./useUnpaidRide";
 
-type Bill = { cost: number; minimumPrice: number; ridingMinutes: number; parkedMinutes: number; ratePerMinute: number | null; planName: string | null };
+type Bill = {
+	cost: number;
+	minimumPrice: number;
+	ridingMinutes: number;
+	parkedMinutes: number;
+	ratePerMinute: number | null;
+	planName: string | null;
+	endedAt: string | null;
+	returnStation: string | null;
+};
 type Card = { id: number; issuer: string | null; lastFour: string | null; valid: boolean };
 type Paid = { amount: number | null; pointsDeducted: number | null; label: string };
 
@@ -77,18 +86,15 @@ async function compressPhoto(file: File) {
 
 function Checkout({ ride, onPaid }: { ride: UnpaidRide; onPaid: (paid: Paid) => void }) {
 	const queryClient = useQueryClient();
-	const position = useLocationStore(state => state.position);
 	const [preview, setPreview] = useState<string | null>(null);
 	const [imageId, setImageId] = useState<number | null>(null);
 	const [cardId, setCardId] = useState<number | null>(null);
 	const [useOlooCoin, setUseOlooCoin] = useState(true);
 
+	// Priced by the API at the moment of return, so this does not grow while the rider takes a photo.
 	const bill = useQuery({
-		queryKey: ["ride", ride.id, "bill", position != null],
-		queryFn: () => {
-			const query = position ? `?latitude=${position.latitude}&longitude=${position.longitude}` : "";
-			return apiRequest<{ bill: Bill }>(`/v1/rides/${ride.id}/bill${query}`);
-		},
+		queryKey: ["ride", ride.id, "bill"],
+		queryFn: () => apiRequest<{ bill: Bill }>(`/v1/rides/${ride.id}/bill`),
 		select: data => data.bill,
 		retry: false
 	});
@@ -99,7 +105,8 @@ function Checkout({ ride, onPaid }: { ride: UnpaidRide; onPaid: (paid: Paid) => 
 	useEffect(() => () => void (preview && URL.revokeObjectURL(preview)), [preview]);
 
 	const upload = useMutation({
-		mutationFn: async (file: File) => {
+		mutationFn: async (file: File | "placeholder") => {
+			if (file === "placeholder") return apiRequest<{ imageId: number }>(`/v1/rides/${ride.id}/photo?placeholder=1`, { method: "POST" });
 			const photo = await compressPhoto(file);
 			return apiRequest<{ imageId: number }>(`/v1/rides/${ride.id}/photo`, { method: "POST", headers: { "content-type": "image/jpeg" }, body: photo });
 		},
@@ -152,7 +159,8 @@ function Checkout({ ride, onPaid }: { ride: UnpaidRide; onPaid: (paid: Paid) => 
 					<p className={bill.isPending ? "skeleton-text" : "inline-error"}>{bill.isPending ? "計算帳單" : `無法取得帳單：${bill.error?.message ?? ""}`}</p>
 				)}
 				<p className="muted small">
-					{timeOfDay(ride.startedAt)} – {timeOfDay(ride.endedAt)}
+					{timeOfDay(ride.startedAt)} – {timeOfDay(bill.data?.endedAt ?? ride.endedAt)} 停止計費
+					{bill.data?.returnStation ? ` · 還在${stationLabel(bill.data.returnStation).name}` : ""}
 				</p>
 			</section>
 
@@ -163,7 +171,7 @@ function Checkout({ ride, onPaid }: { ride: UnpaidRide; onPaid: (paid: Paid) => 
 				<p className="muted small">oloo 結帳需要一張停妥車輛的照片。請拍下車身與站點格位。</p>
 				<label className="photo-picker" data-done={imageId != null}>
 					{preview ? <img src={preview} alt="還車照片預覽" /> : <Camera size={28} weight="duotone" aria-hidden />}
-					<span>{upload.isPending ? "上傳中…" : imageId != null ? "已上傳，點此重拍" : "拍攝還車照片"}</span>
+					<span>{upload.isPending ? "上傳中…" : imageId != null ? (preview ? "已上傳，點此重拍" : "已上傳空白照片，點此改拍") : "拍攝還車照片"}</span>
 					<input
 						type="file"
 						accept="image/*"
@@ -178,6 +186,18 @@ function Checkout({ ride, onPaid }: { ride: UnpaidRide; onPaid: (paid: Paid) => 
 						}}
 					/>
 				</label>
+				<button
+					type="button"
+					className="button button-quiet button-block"
+					disabled={upload.isPending}
+					onClick={() => {
+						setPreview(null);
+						setImageId(null);
+						upload.mutate("placeholder");
+					}}
+				>
+					上傳空白照片（1×1 PNG）
+				</button>
 				{upload.error ? <p className="inline-error">照片上傳失敗：{upload.error.message}</p> : null}
 			</section>
 

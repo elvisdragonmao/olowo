@@ -19,23 +19,41 @@ export function useIsDesktop() {
 
 function useSheetMetrics() {
 	const probe = useRef<HTMLDivElement>(null);
-	const [metrics, setMetrics] = useState({ viewport: window.innerHeight, safeTop: 0, safeBottom: 0 });
+	const [metrics, setMetrics] = useState({ viewport: window.innerHeight, keyboard: 0, safeTop: 0, safeBottom: 0 });
 	useLayoutEffect(() => {
+		// iOS overlays the on-screen keyboard and pans the page instead of resizing it, so size the sheet from
+		// the visual viewport and lift it by whatever the keyboard covers.
+		const viewport = window.visualViewport;
 		const measure = () => {
 			const style = probe.current ? getComputedStyle(probe.current) : null;
-			setMetrics({ viewport: window.innerHeight, safeTop: parseFloat(style?.paddingTop ?? "0") || 0, safeBottom: parseFloat(style?.paddingBottom ?? "0") || 0 });
+			const visible = viewport?.height ?? window.innerHeight;
+			const keyboard = viewport ? Math.max(0, Math.round(window.innerHeight - visible - viewport.offsetTop)) : 0;
+			// iOS can leave the page panned after the keyboard closes.
+			if (keyboard === 0 && window.scrollY !== 0) window.scrollTo(0, 0);
+			setMetrics({
+				viewport: visible,
+				keyboard,
+				safeTop: parseFloat(style?.paddingTop ?? "0") || 0,
+				safeBottom: keyboard > 0 ? 0 : parseFloat(style?.paddingBottom ?? "0") || 0
+			});
 		};
 		measure();
 		window.addEventListener("resize", measure);
-		return () => window.removeEventListener("resize", measure);
+		viewport?.addEventListener("resize", measure);
+		viewport?.addEventListener("scroll", measure);
+		return () => {
+			window.removeEventListener("resize", measure);
+			viewport?.removeEventListener("resize", measure);
+			viewport?.removeEventListener("scroll", measure);
+		};
 	}, []);
-	const full = metrics.viewport - metrics.safeTop - 68;
+	const full = Math.max(160, metrics.viewport - metrics.safeTop - 68);
 	const heights: Record<Snap, number> = {
 		peek: Math.min(full, 128 + metrics.safeBottom),
 		half: Math.min(full, Math.max(320, Math.round(metrics.viewport * 0.48))),
 		full
 	};
-	return { probe, full, heights };
+	return { probe, full, heights, keyboard: metrics.keyboard };
 }
 
 export function Panel({ children, dock, brand }: { children: ReactNode; dock?: ReactNode; brand?: ReactNode }) {
@@ -60,7 +78,7 @@ function Sheet({ children, dock }: { children: ReactNode; dock?: ReactNode }) {
 	const snap = useUiStore(state => state.snap);
 	const setSnap = useUiStore(state => state.setSnap);
 	const setSheetVisibleHeight = useUiStore(state => state.setSheetVisibleHeight);
-	const { probe, full, heights } = useSheetMetrics();
+	const { probe, full, heights, keyboard } = useSheetMetrics();
 	const sheetRef = useRef<HTMLDivElement>(null);
 	const y = useMotionValue(full - heights[snap]);
 
@@ -106,7 +124,7 @@ function Sheet({ children, dock }: { children: ReactNode; dock?: ReactNode }) {
 	return (
 		<>
 			<div ref={probe} className="safe-area-probe" aria-hidden />
-			<motion.section ref={sheetRef} className="panel panel-sheet" data-snap={snap} style={{ y, height: full }} aria-label="站點與車輛">
+			<motion.section ref={sheetRef} className="panel panel-sheet" data-snap={snap} style={{ y, height: full, bottom: keyboard }} aria-label="站點與車輛">
 				{dock ? <div className="sheet-dock">{dock}</div> : null}
 				<div className="sheet-body" {...bind()}>
 					<button

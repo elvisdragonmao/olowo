@@ -127,7 +127,7 @@ export async function mockOlowoApi(page: Page, options: { authenticated?: boolea
 			state.requests.push({ method, path: url.pathname, body });
 			const json = (value: unknown, status = 200) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(value) });
 			const session = { authenticated: true, email: "rider@example.com", userId: 115827, roles: ["customer"], expiresAt: "2026-11-24T00:00:00.000Z" };
-			const route_ = `${method} ${url.pathname}`;
+			const route_ = `${method} ${url.pathname}${url.search === "?placeholder=1" ? url.search : ""}`;
 
 			if (url.pathname === "/v1/auth/session") return json(state.authenticated ? session : { authenticated: false });
 			if (url.pathname === "/v1/auth/email/start") return json({ success: true });
@@ -216,7 +216,7 @@ export async function mockOlowoApi(page: Page, options: { authenticated?: boolea
 						rideId: 9123,
 						scooterId: 1512,
 						action: requestBody.action,
-						triggerAt: new Date(Date.now() + requestBody.afterRideSeconds * 1000).toISOString(),
+						triggerAt: new Date(Date.parse(state.activeRide?.startedAt ?? now()) + requestBody.afterRideSeconds * 1000).toISOString(),
 						state: "scheduled"
 					};
 					return json({ automation: state.rideAutomation });
@@ -229,9 +229,10 @@ export async function mockOlowoApi(page: Page, options: { authenticated?: boolea
 					state.activeRide = null;
 					return json({ success: true });
 				case "GET /v1/rides/9123/bill":
-					return json({ bill: { cost: 9, minimumPrice: 0, ridingMinutes: 4, parkedMinutes: 1, ratePerMinute: 2.4, planName: "月用量 Starter" } });
+					return json({ bill: { cost: 9, minimumPrice: 0, ridingMinutes: 4, parkedMinutes: 1, ratePerMinute: 2.4, planName: "月用量 Starter", endedAt: now(), returnStation: "交大-工程三館站" } });
 				case "GET /v1/payment/cards":
 					return json({ cards: [{ id: 154060, issuer: "VISA", lastFour: "4242", valid: true }] });
+				case "POST /v1/rides/9123/photo?placeholder=1":
 				case "POST /v1/rides/9123/photo":
 					state.photoUploads += 1;
 					return json({ imageId: 777 });

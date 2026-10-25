@@ -8,7 +8,7 @@ oluwu is a mobile-first Web/PWA client that helps oloo riders answer three quest
 2. How much battery and range does it have, and where exactly is it?
 3. While riding, when should I return it and what must I do to finish safely?
 
-It keeps oloo's green identity but does not copy the current app's information architecture. The primary surface is a live map with a compact, data-rich bottom sheet. Statistics explain the map; they are not a separate dashboard users must understand first.
+It keeps oloo's green identity but does not copy the current app's information architecture. The primary surface is a ranked scooter list with a compact live-map overview above it. Statistics explain the list and map; they are not a separate dashboard users must understand first.
 
 ## Experience principles
 
@@ -35,12 +35,13 @@ Mobile navigation should expose Map, Ride, Activity and Account. Ride replaces i
 
 ## Core screens
 
-### Map
+### Nearby scooters
 
-- Full-bleed map with exact scooter points, station areas and optional e-fence layers.
+- A short map overview shows exact scooter points without pushing the ranked list below the first viewport.
 - Scooter marker displays battery percentage; color encodes availability, not battery alone.
-- A selected-scooter sheet shows label, battery, estimated range, exact update age, station, plan estimate and one primary borrow action.
-- A compact summary such as `附近 24 台 · 9 台可借` opens reason statistics.
+- The list is the primary browsing surface. Each row shows vehicle label, walking time, battery percentage, estimated range and concise availability.
+- Selecting a row synchronizes the map and a sticky action bar; no address selector is shown.
+- A compact summary such as `9 台可借 · 附近共 24 台` opens reason statistics.
 - Filter controls: available only, battery floor, model, position freshness and e-fence layer.
 - Cluster dense points without hiding the available/unavailable ratio.
 

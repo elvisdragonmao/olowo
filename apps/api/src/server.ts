@@ -4,7 +4,7 @@ import Fastify, { type FastifyReply, type FastifyRequest } from "fastify";
 import { loadEnvFile } from "node:process";
 import { z } from "zod";
 import { keepLogin, needsRefresh, publicSession, type ProviderSession, SessionStore, startEmailLogin, verifyEmailLogin } from "./auth.js";
-import { fetchCards, toPublicBill, uploadReturnPhoto } from "./billing.js";
+import { fetchCards, placeholderPhoto, toPublicBill, uploadReturnPhoto, type PublicBill } from "./billing.js";
 import { applySchema, createDatabase } from "./database.js";
 import { EfenceCache } from "./efences.js";
 import type { FleetSnapshot } from "./fleet.js";
@@ -56,6 +56,8 @@ const persistFailure = (kind: string, id: string, error: unknown) => app.log.err
 const claimJob = (task: { id: string }) => scheduledActions.claim(task.id);
 const rideAutomations = new RideAutomationStore(task => void scheduledActions.saveRide(task).catch(error => persistFailure("ride", task.id, error)), claimJob);
 const reservationLog = new ReservationLog(database);
+// End time and station oloo fixed when each ride was returned; the bill is priced at that moment, not at checkout.
+const returnedRides = new Map<number, { endedAt: string; returnStation: string | null }>();
 const refreshes = new Map<number, Promise<void>>();
 const lastRefreshAttempt = new Map<number, number>();
 
@@ -194,18 +196,57 @@ async function waitForActiveRide(session: ProviderSession, scooterId: number) {
 	throw new OlooUpstreamError(409, "Rental started but the active ride is not visible yet");
 }
 
-async function returnCurrentRide(session: ProviderSession, rideId: number, scooterId: number) {
+/**
+ * Mirrors the official client: price the ride at the return location first (oloo fixes the end time and
+ * matches the return station there), then send the return. The location is the rider's phone when the PWA
+ * sends it, otherwise the scooter's own last GPS fix.
+ */
+async function returnCurrentRide(session: ProviderSession, rideId: number, scooterId: number, riderLocation?: { latitude: number; longitude: number }) {
 	const active = await getActiveRide(session);
 	if (!active || active.id !== rideId || active.scooterId !== scooterId) {
 		throw new OlooUpstreamError(409, "Active ride changed; no return command was sent");
 	}
 	const scooter = await resolveScooter(session, scooterId);
+	const location = riderLocation ?? fleetCache.position(scooterId);
+	let closing: PublicBill | null = null;
+	if (location) {
+		closing = toPublicBill(await olooRequest<unknown>(environment.OLOO_API_BASE_URL, `/scooters-infos/bill?latitude=${location.latitude}&longitude=${location.longitude}`, session.accessToken));
+	}
 	const upstream = await olooRequest<{ success?: boolean }>(environment.OLOO_API_BASE_URL, "/scooters-infos/return", session.accessToken, {
 		method: "POST",
 		body: JSON.stringify({ imei: scooter.imei })
 	});
 	requireSuccess(upstream, "oloo rejected the return");
-	return { success: true, rideId, scooter };
+	const returned = { endedAt: closing?.endedAt ?? new Date().toISOString(), returnStation: closing?.returnStation ?? null };
+	returnedRides.set(rideId, returned);
+	return { success: true, rideId, scooter, ...returned, locationSource: riderLocation ? "rider" : location ? "scooter" : "none" };
+}
+
+async function checkoutRide(session: ProviderSession, rideId: number, imageId: number, cardId: number, useOlooCoin: boolean) {
+	const ride = await requireUnpaidRide(session, rideId);
+	const scooter = await resolveScooter(session, ride.scooterId);
+	const upstream = z
+		.object({ success: z.boolean().optional(), result: z.object({ amount: z.coerce.number().nullish(), pointsToDeduct: z.coerce.number().nullish() }).partial().nullish() })
+		.passthrough()
+		.parse(
+			await olooRequest<unknown>(environment.OLOO_API_BASE_URL, "/scooters-infos/checkout-with-creditcard", session.accessToken, {
+				method: "POST",
+				// Field set matches the captured client; extraFee was 0 there.
+				body: JSON.stringify({ extraFee: 0, firstImgId: imageId, selectedCard: cardId, useOlooCoin, rentalLogId: rideId, imei: scooter.imei })
+			})
+		);
+	requireSuccess(upstream, "oloo rejected the payment");
+	returnedRides.delete(rideId);
+	return { success: true, rideId, amount: upstream.result?.amount ?? null, pointsDeducted: upstream.result?.pointsToDeduct ?? null };
+}
+
+/** Pays a returned ride with the placeholder photo and the rider's first valid card, so the scooter can be borrowed again. */
+async function settleWithPlaceholder(session: ProviderSession, rideId: number) {
+	for (let attempt = 0; attempt < 6 && !(await getUnpaidRide(session)); attempt += 1) await new Promise(resolve => setTimeout(resolve, 500));
+	const card = (await fetchCards(environment.OLOO_API_BASE_URL, session.accessToken)).find(item => item.valid);
+	if (!card) throw new OlooUpstreamError(409, "Returned, but no valid card is on file to pay before reborrowing");
+	const { imageId } = await uploadReturnPhoto(environment.OLOO_API_BASE_URL, session.accessToken, rideId, placeholderPhoto, "image/png");
+	return checkoutRide(session, rideId, imageId, card.id, true);
 }
 
 function startRideAutomation(
@@ -216,7 +257,8 @@ function startRideAutomation(
 		if (task.action === "notify") return;
 		const returned = await returnCurrentRide(session, task.rideId, task.scooterId);
 		if (task.action === "return_and_reborrow") {
-			await new Promise(resolve => setTimeout(resolve, 1_500));
+			// oloo keeps an unpaid ride open against the account, so pay it (placeholder photo) before borrowing again.
+			await settleWithPlaceholder(session, task.rideId);
 			const reborrowed = await olooRequest<{ success?: boolean }>(environment.OLOO_API_BASE_URL, "/scooters-infos/new-rent", session.accessToken, {
 				method: "POST",
 				body: JSON.stringify({ imei: returned.scooter.imei, reservationId: null })
@@ -337,11 +379,12 @@ app.post("/v1/rides/:rideId/return", async (request, reply) => {
 	if (!session) return reply.code(401).send({ code: "AUTH_REQUIRED", message: "Please sign in" });
 	const key = z.string().min(8).parse(request.headers["idempotency-key"]);
 	const { rideId } = z.object({ rideId: z.coerce.number().int().positive() }).parse(request.params);
-	const { scooterId } = z.object({ scooterId: z.number().int().positive() }).parse(request.body);
+	const body = z.object({ scooterId: z.number().int().positive(), latitude: z.number().min(-90).max(90).optional(), longitude: z.number().min(-180).max(180).optional() }).parse(request.body);
+	const riderLocation = body.latitude != null && body.longitude != null ? { latitude: body.latitude, longitude: body.longitude } : undefined;
 	const result = await idempotency.run(session.userId, `return:${rideId}`, key, async () => {
-		const returned = await returnCurrentRide(session, rideId, scooterId);
+		const returned = await returnCurrentRide(session, rideId, body.scooterId, riderLocation);
 		rideAutomations.cancel(session.userId, rideId);
-		return { success: returned.success, rideId };
+		return { success: returned.success, rideId, endedAt: returned.endedAt, returnStation: returned.returnStation, locationSource: returned.locationSource };
 	});
 	return reply.send(result);
 });
@@ -398,18 +441,16 @@ app.get("/v1/rides/unpaid", async (request, reply) => {
 	return reply.send({ ride: await getUnpaidRide(session) });
 });
 
-// oloo prices the final bill at the return location; prefer the rider's position, else the scooter's last fix.
+// Priced at the moment of return (as the official client does with estimate-bill), so it stops growing at return.
 app.get("/v1/rides/:rideId/bill", async (request, reply) => {
 	const session = await getSession(request, reply);
 	if (!session) return reply.code(401).send({ code: "AUTH_REQUIRED", message: "Please sign in" });
 	const { rideId } = z.object({ rideId: z.coerce.number().int().positive() }).parse(request.params);
-	const query = z.object({ latitude: z.coerce.number().min(-90).max(90).optional(), longitude: z.coerce.number().min(-180).max(180).optional() }).parse(request.query);
 	const ride = await requireUnpaidRide(session, rideId);
-	const location = query.latitude != null && query.longitude != null ? { latitude: query.latitude, longitude: query.longitude } : fleetCache.position(ride.scooterId);
-	if (!location) return reply.code(409).send({ code: "LOCATION_REQUIRED", message: "A return location is needed to price the ride" });
-	const bill = toPublicBill(await olooRequest<unknown>(environment.OLOO_API_BASE_URL, `/scooters-infos/bill?latitude=${location.latitude}&longitude=${location.longitude}`, session.accessToken));
-	if (bill.rideId != null && bill.rideId !== rideId) return reply.code(409).send({ code: "RIDE_CHANGED", message: "oloo returned a bill for a different ride" });
-	return reply.send({ bill });
+	const returned = returnedRides.get(rideId);
+	const endedAt = Date.parse(returned?.endedAt ?? ride.endedAt);
+	const bill = toPublicBill(await olooRequest<unknown>(environment.OLOO_API_BASE_URL, `/scooters-infos/estimate-bill?lastRentalEndedAtForCalculationMillis=${endedAt}`, session.accessToken));
+	return reply.send({ bill: { ...bill, endedAt: new Date(endedAt).toISOString(), returnStation: bill.returnStation ?? returned?.returnStation ?? null } });
 });
 
 app.get("/v1/payment/cards", async (request, reply) => {
@@ -424,12 +465,15 @@ app.post("/v1/rides/:rideId/photo", async (request, reply) => {
 	const session = await getSession(request, reply);
 	if (!session) return reply.code(401).send({ code: "AUTH_REQUIRED", message: "Please sign in" });
 	const { rideId } = z.object({ rideId: z.coerce.number().int().positive() }).parse(request.params);
+	const { placeholder } = z.object({ placeholder: z.enum(["1"]).optional() }).parse(request.query);
+	await requireUnpaidRide(session, rideId);
+	// `?placeholder=1` uploads the built-in 1×1 white PNG instead of a photo.
+	if (placeholder) return reply.send(await uploadReturnPhoto(environment.OLOO_API_BASE_URL, session.accessToken, rideId, placeholderPhoto, "image/png"));
 	const contentType = z.enum(["image/jpeg", "image/png", "image/webp"]).parse(String(request.headers["content-type"]).split(";")[0]);
 	const image = z
 		.instanceof(Buffer)
-		.refine(buffer => buffer.length > 1024, "Photo is empty")
+		.refine(buffer => buffer.length > 0, "Photo is empty")
 		.parse(request.body);
-	await requireUnpaidRide(session, rideId);
 	return reply.send(await uploadReturnPhoto(environment.OLOO_API_BASE_URL, session.accessToken, rideId, image, contentType));
 });
 
@@ -439,22 +483,7 @@ app.post("/v1/rides/:rideId/checkout", async (request, reply) => {
 	const key = z.string().min(8).parse(request.headers["idempotency-key"]);
 	const { rideId } = z.object({ rideId: z.coerce.number().int().positive() }).parse(request.params);
 	const body = z.object({ imageId: z.number().int().positive(), cardId: z.number().int().positive(), useOlooCoin: z.boolean().default(true) }).parse(request.body);
-	const result = await idempotency.run(session.userId, `checkout:${rideId}`, key, async () => {
-		const ride = await requireUnpaidRide(session, rideId);
-		const scooter = await resolveScooter(session, ride.scooterId);
-		const upstream = z
-			.object({ success: z.boolean().optional(), result: z.object({ amount: z.coerce.number().nullish(), pointsToDeduct: z.coerce.number().nullish() }).partial().nullish() })
-			.passthrough()
-			.parse(
-				await olooRequest<unknown>(environment.OLOO_API_BASE_URL, "/scooters-infos/checkout-with-creditcard", session.accessToken, {
-					method: "POST",
-					// Field set matches the captured client; extraFee was 0 there.
-					body: JSON.stringify({ extraFee: 0, firstImgId: body.imageId, selectedCard: body.cardId, useOlooCoin: body.useOlooCoin, rentalLogId: rideId, imei: scooter.imei })
-				})
-			);
-		requireSuccess(upstream, "oloo rejected the payment");
-		return { success: true, rideId, amount: upstream.result?.amount ?? null, pointsDeducted: upstream.result?.pointsToDeduct ?? null };
-	});
+	const result = await idempotency.run(session.userId, `checkout:${rideId}`, key, () => checkoutRide(session, rideId, body.imageId, body.cardId, body.useOlooCoin));
 	return reply.send(result);
 });
 

@@ -21,6 +21,12 @@ let activeRide: RentalLog | null = null;
 let lastRide: RentalLog | null = null;
 let checkoutBody: Record<string, unknown> | null = null;
 let uploadedPhoto = "";
+let nextRideId = 9001;
+let rideStartOffsetMs = 0;
+const closingAt = new Date(Date.now() - 1000).toISOString();
+const providerLog: string[] = [];
+let billLocation: string | null = null;
+let estimateEndedAt: string | null = null;
 
 function json(response: ServerResponse, value: unknown, status = 200) {
 	response.writeHead(status, { "content-type": "application/json" });
@@ -93,8 +99,24 @@ async function providerHandler(request: IncomingMessage, response: ServerRespons
 	if (path === "/scooter-statuses") return json(response, [{ imei: "private-imei", latitude: 24.79315, longitude: 120.99327, power: 84, errorMsg: null, updatedAt: new Date().toISOString() }]);
 	if (path === "/scooters-infos/get-possible-ride-plan/12") return json(response, { basicOrStationRidePlan: { id: 73, name: "普通費率", minMinute: 30, minPrice: 60, normalRate: 2 } });
 	if (path === "/rental-logs/get-last-rental-log-by-account") return json(response, lastRide ? [lastRide] : []);
-	if (path === "/scooters-infos/bill")
+	if (
+		[
+			"/scooters-infos/bill",
+			"/scooters-infos/return",
+			"/scooters-infos/estimate-bill",
+			"/account-rental-images/upload/",
+			"/scooters-infos/checkout-with-creditcard",
+			"/scooters-infos/new-rent"
+		].includes(path)
+	)
+		providerLog.push(path.split("/").filter(Boolean).pop()!);
+	if (path === "/scooters-infos/estimate-bill") estimateEndedAt = url.searchParams.get("lastRentalEndedAtForCalculationMillis");
+	if (path === "/scooters-infos/bill") billLocation = `${url.searchParams.get("latitude")},${url.searchParams.get("longitude")}`;
+	if (path === "/scooters-infos/bill" || path === "/scooters-infos/estimate-bill")
 		return json(response, {
+			rentalEndedAt: closingAt,
+			returnStation: { name: "交大-工程三館站" },
+			returnType: "GPS",
 			rentalCost: 9,
 			minPrice: 0,
 			scooterRentalLogId: lastRide?.id,
@@ -118,7 +140,15 @@ async function providerHandler(request: IncomingMessage, response: ServerRespons
 	if (path === "/reservation/overall-current") return json(response, []);
 	if (path === "/reservation/current") return json(response, {});
 	if (path === "/scooters-infos/new-rent") {
-		activeRide = { id: 9001, scootersInfoId: 12, engineLicenseNumber: "JZ-333", lastRentalStartedAt: new Date().toISOString(), lastRentalEndedAt: null, cost: 0, isPaid: null };
+		activeRide = {
+			id: nextRideId++,
+			scootersInfoId: 12,
+			engineLicenseNumber: "JZ-333",
+			lastRentalStartedAt: new Date(Date.now() - rideStartOffsetMs).toISOString(),
+			lastRentalEndedAt: null,
+			cost: 0,
+			isPaid: null
+		};
 		lastRide = activeRide;
 		return json(response, { success: true });
 	}
@@ -227,15 +257,24 @@ test("Fastify completes the authenticated ride and reservation workflow", async 
 	assert.equal(response.status, 409);
 	assert.notEqual(activeRide, null);
 
-	response = await api("/v1/rides/9001/return", { method: "POST", headers: { "idempotency-key": "correct-ride-key" }, body: JSON.stringify({ scooterId: 12 }) });
+	providerLog.length = 0;
+	response = await api("/v1/rides/9001/return", {
+		method: "POST",
+		headers: { "idempotency-key": "correct-ride-key" },
+		body: JSON.stringify({ scooterId: 12, latitude: 24.7876, longitude: 120.9972 })
+	});
 	assert.equal(response.status, 200);
+	assert.deepEqual(await response.json(), { success: true, rideId: 9001, endedAt: closingAt, returnStation: "交大-工程三館站", locationSource: "rider" });
 	assert.equal(activeRide, null);
+	assert.deepEqual(providerLog, ["bill", "return"], "like the official app, the ride is priced at the return location before the return command");
+	assert.equal(billLocation, "24.7876,120.9972", "the rider's location is used when the PWA sends it");
 
 	const unpaid = (await (await api("/v1/rides/unpaid")).json()) as { ride: { id: number } | null };
 	assert.equal(unpaid.ride?.id, 9001, "a returned but unpaid ride waits for checkout");
-	response = await api("/v1/rides/9001/bill?latitude=24.79&longitude=120.99");
+	response = await api("/v1/rides/9001/bill");
 	const { bill } = (await response.json()) as { bill: Record<string, unknown> };
-	assert.deepEqual([bill.cost, bill.ridingMinutes, bill.parkedMinutes, bill.planName, "imei" in bill], [9, 4, 1, "月用量 Starter", false]);
+	assert.deepEqual([bill.cost, bill.ridingMinutes, bill.parkedMinutes, bill.planName, bill.returnStation, "imei" in bill], [9, 4, 1, "月用量 Starter", "交大-工程三館站", false]);
+	assert.equal(estimateEndedAt, String(Date.parse(closingAt)), "the bill is priced at the moment of return, so it stops growing");
 	const { cards } = (await (await api("/v1/payment/cards")).json()) as { cards: Array<Record<string, unknown>> };
 	assert.deepEqual(cards, [{ id: 154060, issuer: "VISA", lastFour: "4242", valid: true }], "cards drop the provider account id");
 
@@ -251,6 +290,24 @@ test("Fastify completes the authenticated ride and reservation workflow", async 
 	assert.deepEqual(await (await api("/v1/rides/unpaid")).json(), { ride: null });
 	response = await api("/v1/rides/9001/photo", { method: "POST", headers: { "content-type": "image/jpeg" }, body: Buffer.alloc(4096, 0xff) });
 	assert.equal(response.status, 409, "a paid ride cannot receive another photo");
+
+	// Return and reborrow: after N seconds of riding the server returns, pays with the placeholder photo, then rents again.
+	rideStartOffsetMs = 12_000;
+	response = await api("/v1/rides", { method: "POST", headers: { "idempotency-key": "integration-rent-2" }, body: JSON.stringify({ scooterId: 12, reservationId: null }) });
+	assert.equal(((await response.json()) as { activeRide: { id: number } }).activeRide.id, 9002);
+	response = await api("/v1/rides/9002/automation", { method: "PUT", body: JSON.stringify({ action: "return_and_reborrow", afterRideSeconds: 23 }) });
+	assert.equal(response.status, 200);
+	providerLog.length = 0;
+	uploadedPhoto = "";
+	for (let waited = 0; waited < 20_000 && activeRide?.id !== 9003; waited += 250) await new Promise(resolve => setTimeout(resolve, 250));
+	assert.deepEqual(providerLog, ["bill", "return", "upload", "checkout-with-creditcard", "new-rent"]);
+	assert.ok(uploadedPhoto.includes("\x89PNG") && /filename="9002-[^"]+\.png"/.test(uploadedPhoto), "the placeholder PNG is uploaded for the returned ride");
+	assert.equal(checkoutBody?.rentalLogId, 9002);
+	assert.equal(checkoutBody?.selectedCard, 154060);
+	assert.equal(activeRide?.id, 9003, "the same scooter is borrowed again");
+	const automation = (await (await api("/v1/rides/9002/automation")).json()) as { automation: { state: string } };
+	assert.equal(automation.automation.state, "completed");
+	rideStartOffsetMs = 0;
 
 	revokeRides = true;
 	response = await api("/v1/rides/current");

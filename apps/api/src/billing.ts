@@ -13,6 +13,9 @@ export interface PublicBill {
 	planName: string | null;
 	startedAt: string | null;
 	endedAt: string | null;
+	/** Station oloo matched the return location to, and how (`GPS`, `RFID`, …). */
+	returnStation: string | null;
+	returnType: string | null;
 }
 
 const bucket = z.object({ duration: z.coerce.number().default(0), cost: z.coerce.number().default(0), costPerMin: z.coerce.number().optional() }).partial();
@@ -29,7 +32,9 @@ const billSchema = z
 		rentalStartedAt: z.string().nullish(),
 		rentalEndedAt: z.string().nullish(),
 		engineLicenseNumber: z.string().nullish(),
-		scooterRentalLogId: z.coerce.number().nullish()
+		scooterRentalLogId: z.coerce.number().nullish(),
+		returnStation: z.object({ name: z.string().nullish() }).partial().nullish(),
+		returnType: z.string().nullish()
 	})
 	.passthrough();
 
@@ -48,7 +53,9 @@ export function toPublicBill(value: unknown): PublicBill {
 		ratePerMinute: buckets.normalMinutes?.costPerMin ?? bill.ridePlan?.normalRate ?? null,
 		planName: bill.ridePlan?.name ?? null,
 		startedAt: bill.rentalStartedAt ?? null,
-		endedAt: bill.rentalEndedAt ?? null
+		endedAt: bill.rentalEndedAt ?? null,
+		returnStation: bill.returnStation?.name ?? null,
+		returnType: bill.returnType ?? null
 	};
 }
 
@@ -60,7 +67,10 @@ export async function fetchCards(baseUrl: string, token: string) {
 	return cards.map(card => ({ id: card.id, issuer: card.issuer ?? null, lastFour: card.lastFour ?? null, valid: card.isValid !== false }));
 }
 
-/** Uploads a genuine return photo the rider took; oloo answers with the image record used by checkout. */
+/** 1×1 white PNG (67 bytes), uploaded when the rider skips the return photo and before an automatic reborrow. */
+export const placeholderPhoto = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAACklEQVR42mP4DwABAQEAHLCMmQAAAABJRU5ErkJggg==", "base64");
+
+/** Uploads a return photo (the rider's, or `placeholderPhoto` when they skip it); oloo answers with the image record used by checkout. */
 export async function uploadReturnPhoto(baseUrl: string, token: string, rideId: number, image: Buffer, contentType: string) {
 	const extension = contentType === "image/png" ? "png" : contentType === "image/webp" ? "webp" : "jpg";
 	const form = new FormData();

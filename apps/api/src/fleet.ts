@@ -1,4 +1,5 @@
 export interface ScooterSummary {
+	providerId: number;
 	id: string;
 	batteryPercent: number;
 	rangeKm: number;
@@ -22,8 +23,8 @@ export const demoFleet: FleetSummary = {
 	unavailableCount: 15,
 	reasons: { lowBattery: 8, hardware: 4, location: 3 },
 	scooters: [
-		{ id: "JZ-333", batteryPercent: 84, rangeKm: 18, walkMinutes: 2, latitude: 24.79315, longitude: 120.99327, availability: "available" },
-		{ id: "JZ-551", batteryPercent: 62, rangeKm: 14, walkMinutes: 4, latitude: 24.79403, longitude: 120.99188, availability: "available" },
-		{ id: "JZ-772", batteryPercent: 31, rangeKm: 8, walkMinutes: 6, latitude: 24.79384, longitude: 120.99516, availability: "low_battery" }
+		{ providerId: 12, id: "JZ-333", batteryPercent: 84, rangeKm: 18, walkMinutes: 2, latitude: 24.79315, longitude: 120.99327, availability: "available" },
+		{ providerId: 13, id: "JZ-551", batteryPercent: 62, rangeKm: 14, walkMinutes: 4, latitude: 24.79403, longitude: 120.99188, availability: "available" },
+		{ providerId: 14, id: "JZ-772", batteryPercent: 31, rangeKm: 8, walkMinutes: 6, latitude: 24.79384, longitude: 120.99516, availability: "low_battery" }
 	] satisfies ScooterSummary[]
 };

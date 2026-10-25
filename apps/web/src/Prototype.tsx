@@ -1,6 +1,7 @@
 import { CaretRight, MagnifyingGlass, SlidersHorizontal, User, WarningCircle } from "@phosphor-icons/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { AuthPanel } from "./features/auth/AuthPanel";
 import type { LiveMapHandle } from "./features/map/LiveMap";
 import { ScooterRow } from "./features/map/ScooterRow";
 import { useFleetQuery } from "./features/map/useFleetQuery";
@@ -172,15 +173,7 @@ function OluwuPrototype() {
 			</BottomSheet>
 
 			<BottomSheet open={sheet === "profile"} onOpenChange={open => setSheet(open ? "profile" : null)} title="帳號" description="登入後才能借車與查看騎乘紀錄" snap={0.34}>
-				<div className="profile-sheet">
-					<div className="profile-mark">
-						<User size={28} weight="bold" />
-					</div>
-					<div>
-						<strong>尚未登入</strong>
-						<p>Email 登入將在取得完整認證協定後接上。</p>
-					</div>
-				</div>
+				<AuthPanel />
 			</BottomSheet>
 		</div>
 	);

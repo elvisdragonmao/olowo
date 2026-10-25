@@ -1,6 +1,7 @@
 export type Availability = "available" | "low_battery" | "unavailable";
 
 export interface ScooterSummary {
+	providerId: number;
 	id: string;
 	batteryPercent: number;
 	rangeKm: number;
@@ -33,6 +34,7 @@ export const demoFleet: FleetSummary = {
 	},
 	scooters: [
 		{
+			providerId: 12,
 			id: "JZ-333",
 			batteryPercent: 84,
 			rangeKm: 18,
@@ -42,6 +44,7 @@ export const demoFleet: FleetSummary = {
 			availability: "available"
 		},
 		{
+			providerId: 13,
 			id: "JZ-551",
 			batteryPercent: 62,
 			rangeKm: 14,
@@ -51,6 +54,7 @@ export const demoFleet: FleetSummary = {
 			availability: "available"
 		},
 		{
+			providerId: 14,
 			id: "JZ-772",
 			batteryPercent: 31,
 			rangeKm: 8,

@@ -7,7 +7,6 @@ interface RawInfo {
 	isActive?: unknown;
 	AvailableDistance?: unknown;
 	accountId?: unknown;
-	scooterRentalLogId?: unknown;
 }
 
 interface RawStatus {
@@ -16,6 +15,7 @@ interface RawStatus {
 	longitude?: unknown;
 	power?: unknown;
 	errorMsg?: unknown;
+	updatedAt?: unknown;
 }
 
 const origin = { latitude: 24.7938, longitude: 120.9937 };
@@ -50,10 +50,20 @@ function rangeKm(value: unknown, batteryPercent: number) {
 	return Math.round(batteryPercent * 0.21);
 }
 
+function blocksRental(error: unknown) {
+	const value = text(error);
+	if (!value || value === "illegalMovement" || value === "illegalDisassembly") return false;
+	return value !== "Connection: close";
+}
+
 export async function fetchOlooFleet(baseUrl: string, token: string): Promise<FleetSummary> {
-	const headers = { authorization: `Bearer ${token}`, accept: "application/json" };
+	const headers = { authorization: token, accept: "application/json" };
 	const signal = AbortSignal.timeout(15_000);
-	const [infosResponse, statusesResponse] = await Promise.all([fetch(`${baseUrl}/scooters-infos`, { headers, signal }), fetch(`${baseUrl}/scooter-statuses`, { headers, signal })]);
+	const infosUrl = new URL(`${baseUrl}/scooters-infos`);
+	const statusesUrl = new URL(`${baseUrl}/scooter-statuses`);
+	infosUrl.searchParams.set("access_token", token);
+	statusesUrl.searchParams.set("access_token", token);
+	const [infosResponse, statusesResponse] = await Promise.all([fetch(infosUrl, { headers, signal }), fetch(statusesUrl, { headers, signal })]);
 	if (!infosResponse.ok || !statusesResponse.ok) throw new Error(`Upstream fleet failed: ${infosResponse.status}/${statusesResponse.status}`);
 
 	const infos = asArray<RawInfo>(await infosResponse.json());
@@ -67,14 +77,17 @@ export async function fetchOlooFleet(baseUrl: string, token: string): Promise<Fl
 		const longitude = number(status?.longitude);
 		if (latitude == null || longitude == null || latitude === 0 || longitude === 0) return [];
 		const batteryPercent = Math.max(0, Math.min(100, Math.round(number(status?.power) ?? 0)));
-		const hasHardwareError = Boolean(text(status?.errorMsg));
-		const inUse = info.accountId != null || info.scooterRentalLogId != null;
+		const hasHardwareError = blocksRental(status?.errorMsg);
+		const updatedAt = typeof status?.updatedAt === "string" ? Date.parse(status.updatedAt) : Number.NaN;
+		const hasLocationError = !Number.isFinite(updatedAt) || Date.now() - updatedAt > 5 * 60_000;
+		const inUse = info.accountId != null;
 		const active = info.isActive !== false;
-		const availability: ScooterSummary["availability"] = !active || inUse || hasHardwareError ? "unavailable" : batteryPercent < 35 ? "low_battery" : "available";
+		const availability: ScooterSummary["availability"] = !active || inUse || hasHardwareError || hasLocationError ? "unavailable" : batteryPercent < 35 ? "low_battery" : "available";
 		const distance = distanceKm(latitude, longitude);
 		return [
 			{
 				scooter: {
+					providerId: number(info.id) ?? 0,
 					id: text(info.EngineLicenseNumber) ?? `車輛 ${String(info.id ?? "未知")}`,
 					batteryPercent,
 					rangeKm: rangeKm(info.AvailableDistance, batteryPercent),
@@ -84,7 +97,8 @@ export async function fetchOlooFleet(baseUrl: string, token: string): Promise<Fl
 					availability
 				} satisfies ScooterSummary,
 				distance,
-				hasHardwareError
+				hasHardwareError,
+				hasLocationError
 			}
 		];
 	});
@@ -93,13 +107,14 @@ export async function fetchOlooFleet(baseUrl: string, token: string): Promise<Fl
 	const scooters = nearby.map(item => item.scooter);
 	const lowBattery = scooters.filter(item => item.availability === "low_battery").length;
 	const hardware = nearby.filter(item => item.hasHardwareError).length;
+	const location = nearby.filter(item => item.hasLocationError).length;
 	const availableCount = scooters.filter(item => item.availability === "available").length;
 
 	return {
 		totalCount: scooters.length,
 		availableCount,
 		unavailableCount: scooters.length - availableCount,
-		reasons: { lowBattery, hardware, location: 0 },
+		reasons: { lowBattery, hardware, location },
 		scooters
 	};
 }

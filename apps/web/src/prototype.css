@@ -534,6 +534,131 @@
 	line-height: 1.45;
 }
 
+.email-login-form {
+	display: grid;
+	gap: 14px;
+}
+
+.email-login-form label {
+	display: grid;
+	gap: 6px;
+	color: var(--oluwu-muted);
+	font-size: 12px;
+	font-weight: 750;
+}
+
+.login-input-wrap {
+	display: flex;
+	align-items: center;
+	gap: 9px;
+	min-height: 52px;
+	padding: 0 14px;
+	color: var(--oluwu-ink);
+	background: #f1f5f2;
+	border: 1px solid transparent;
+	border-radius: 14px;
+}
+
+.login-input-wrap:focus-within {
+	border-color: var(--oluwu-mint);
+}
+
+.login-input-wrap input,
+.captcha-input {
+	width: 100%;
+	min-height: 44px;
+	color: var(--oluwu-ink-strong);
+	background: transparent;
+	border: 0;
+	outline: none;
+	font: inherit;
+	font-size: 16px;
+}
+
+.captcha-input {
+	padding: 0 14px;
+	background: #f1f5f2;
+	border: 1px solid transparent;
+	border-radius: 14px;
+	font-size: 24px;
+	font-weight: 850;
+	letter-spacing: 0.28em;
+}
+
+.captcha-input:focus {
+	border-color: var(--oluwu-mint);
+}
+
+.login-submit,
+.login-secondary {
+	min-height: 50px;
+	color: white;
+	background: var(--oluwu-ink);
+	border: 0;
+	border-radius: 14px;
+	font-size: 15px;
+	font-weight: 850;
+}
+
+.login-secondary {
+	min-height: 44px;
+	color: var(--oluwu-ink);
+	background: transparent;
+}
+
+.login-submit:disabled,
+.login-secondary:disabled {
+	opacity: 0.55;
+}
+
+.login-error {
+	margin: -4px 0 0;
+	color: #9d3630;
+	font-size: 12px;
+	font-weight: 650;
+}
+
+.signed-in-panel {
+	display: grid;
+	grid-template-columns: auto 1fr;
+	gap: 12px;
+	align-items: center;
+}
+
+.signed-in-mark {
+	display: grid;
+	width: 52px;
+	height: 52px;
+	place-items: center;
+	color: var(--oluwu-ink);
+	background: var(--oluwu-mint-soft);
+	border-radius: 50%;
+}
+
+.signed-in-panel strong {
+	font-size: 18px;
+}
+
+.signed-in-panel p {
+	margin: 2px 0 0;
+	color: var(--oluwu-muted);
+	font-size: 13px;
+}
+
+.signed-in-panel > button {
+	grid-column: 1 / -1;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 7px;
+	min-height: 46px;
+	color: #8a302c;
+	background: var(--oluwu-danger-soft);
+	border: 0;
+	border-radius: 14px;
+	font-weight: 800;
+}
+
 @media (prefers-reduced-motion: reduce) {
 	.header-icon-button,
 	.map-scooter-marker,

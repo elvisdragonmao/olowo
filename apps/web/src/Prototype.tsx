@@ -3,13 +3,14 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { AuthPanel } from "./features/auth/AuthPanel";
 import type { LiveMapHandle } from "./features/map/LiveMap";
+import { demoFleet } from "./features/map/model";
 import { ScooterRow } from "./features/map/ScooterRow";
 import { useFleetQuery } from "./features/map/useFleetQuery";
 import { useMapStore } from "./features/map/useMapStore";
 import { RidePanel } from "./features/ride/RidePanel";
 import { ScooterActionPanel } from "./features/ride/ScooterActionPanel";
 import { useCurrentRideQuery } from "./features/ride/useCurrentRideQuery";
-import { BottomSheet, MobileScroll } from "./mobile";
+import { BottomSheet, MobileScroll, useKeyboard } from "./mobile";
 
 const LiveMap = lazy(() => import("./features/map/LiveMap").then(module => ({ default: module.LiveMap })));
 
@@ -26,8 +27,10 @@ type Sheet = "filters" | "reasons" | "profile" | "scooter" | "ride" | null;
 
 function OluwuPrototype() {
 	const mapRef = useRef<LiveMapHandle>(null);
+	const keyboard = useKeyboard();
 	const [sheet, setSheet] = useState<Sheet>(null);
-	const { data } = useFleetQuery();
+	const { data: fleetData } = useFleetQuery();
+	const data = fleetData ?? demoFleet;
 	const currentRide = useCurrentRideQuery().data?.activeRide ?? null;
 	const selectedId = useMapStore(state => state.selectedId);
 	const setSelectedId = useMapStore(state => state.setSelectedId);
@@ -55,6 +58,11 @@ function OluwuPrototype() {
 
 		setSelectedId(id);
 		mapRef.current?.focusScooter(scooter);
+	};
+
+	const handleSheetChange = (name: Exclude<Sheet, null>) => (open: boolean) => {
+		if (!open) keyboard.hide();
+		setSheet(open ? name : null);
 	};
 
 	return (
@@ -113,7 +121,7 @@ function OluwuPrototype() {
 					<button className="reason-disclosure" type="button" onClick={() => setSheet("reasons")}>
 						<WarningCircle size={23} weight="bold" />
 						<span>
-							{data.unavailableCount} 台暫不可借 · 電量 {data.reasons.lowBattery} · 硬體 {data.reasons.hardware} · 定位 {data.reasons.location}
+							{data.unavailableCount} 台暫不可借 · 電量 {data.reasons.lowBattery} · 硬體 {data.reasons.hardware} · 定位 {data.reasons.location} · 預約 {data.reasons.reserved ?? 0}
 						</span>
 						<CaretRight size={18} weight="bold" />
 					</button>
@@ -131,7 +139,7 @@ function OluwuPrototype() {
 				</button>
 			</footer>
 
-			<BottomSheet open={sheet === "filters"} onOpenChange={open => setSheet(open ? "filters" : null)} title="篩選附近車輛" description="清單與地圖會一起更新" snap={0.42}>
+			<BottomSheet open={sheet === "filters"} onOpenChange={handleSheetChange("filters")} title="篩選附近車輛" description="清單與地圖會一起更新" snap={0.42}>
 				<div className="sheet-section">
 					<p className="sheet-label">可借狀態</p>
 					<button type="button" className="sheet-toggle" aria-pressed={availableOnly} onClick={() => setAvailableOnly(!availableOnly)}>
@@ -151,13 +159,7 @@ function OluwuPrototype() {
 				</div>
 			</BottomSheet>
 
-			<BottomSheet
-				open={sheet === "reasons"}
-				onOpenChange={open => setSheet(open ? "reasons" : null)}
-				title={`${data.unavailableCount} 台暫不可借`}
-				description="同一台車可能同時出現多個訊號"
-				snap={0.42}
-			>
+			<BottomSheet open={sheet === "reasons"} onOpenChange={handleSheetChange("reasons")} title={`${data.unavailableCount} 台暫不可借`} description="同一台車可能同時出現多個訊號" snap={0.42}>
 				<div className="reason-list">
 					<div>
 						<span>電量不足</span>
@@ -171,18 +173,22 @@ function OluwuPrototype() {
 						<span>定位異常</span>
 						<strong>{data.reasons.location}</strong>
 					</div>
+					<div>
+						<span>已被預約</span>
+						<strong>{data.reasons.reserved ?? 0}</strong>
+					</div>
 				</div>
 			</BottomSheet>
 
-			<BottomSheet open={sheet === "profile"} onOpenChange={open => setSheet(open ? "profile" : null)} title="帳號" description="登入後才能借車與查看騎乘紀錄" snap={0.34}>
+			<BottomSheet open={sheet === "profile"} onOpenChange={handleSheetChange("profile")} title="帳號" description="登入後才能借車與查看騎乘紀錄" snap={0.34}>
 				<AuthPanel />
 			</BottomSheet>
 
-			<BottomSheet open={sheet === "scooter"} onOpenChange={open => setSheet(open ? "scooter" : null)} title="借用資訊" description="費率與操作都以送出當下的 staging 狀態為準" snap={0.62}>
+			<BottomSheet open={sheet === "scooter"} onOpenChange={handleSheetChange("scooter")} title="借用資訊" description="費率與操作都以送出當下的 staging 狀態為準" snap={0.62}>
 				<ScooterActionPanel scooter={selected} onNeedLogin={() => setSheet("profile")} />
 			</BottomSheet>
 
-			<BottomSheet open={sheet === "ride"} onOpenChange={open => setSheet(open ? "ride" : null)} title="目前騎乘" description="計費與歸還狀態來自 oloo staging" snap={0.62}>
+			<BottomSheet open={sheet === "ride"} onOpenChange={handleSheetChange("ride")} title="目前騎乘" description="計費與歸還狀態來自 oloo staging" snap={0.62}>
 				{currentRide ? <RidePanel ride={currentRide} /> : <p className="no-active-ride">目前沒有進行中的騎乘。</p>}
 			</BottomSheet>
 		</div>

@@ -19,6 +19,7 @@ export interface FleetSummary {
 		lowBattery: number;
 		hardware: number;
 		location: number;
+		reserved: number;
 	};
 	scooters: ScooterSummary[];
 }
@@ -30,7 +31,8 @@ export const demoFleet: FleetSummary = {
 	reasons: {
 		lowBattery: 8,
 		hardware: 4,
-		location: 3
+		location: 3,
+		reserved: 0
 	},
 	scooters: [
 		{

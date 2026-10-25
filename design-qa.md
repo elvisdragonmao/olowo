@@ -4,6 +4,10 @@
 
 - Design source: `apps/web/design/oluwu-list-map-reference.png`
 - Implementation capture: `apps/web/design/implementation-iphone.png`
+- Borrow/reservation sheet: `apps/web/design/implementation-borrow.png`
+- Active-ride automation sheet: `apps/web/design/implementation-ride.png`
+- Live staging fleet: `apps/web/design/live-staging-iphone.png`
+- Live staging plan sheet: `apps/web/design/live-staging-plan.png`
 - Side-by-side comparison: `apps/web/design/design-qa-comparison.png`
 - Target viewport: iPhone app viewport, 393 x 852 CSS px
 - Capture canvas: 1280 x 1100 px at device scale factor 1
@@ -29,6 +33,9 @@ The central map-summary-list region was compared at equal width. Vehicle IDs, wa
 5. Functional checks confirmed row-to-map selection, minimum-battery filtering, reason-sheet presentation, 393 px layout width, and no horizontal overflow.
 6. Split the MapLibre implementation into a lazy-loaded map chunk so the ranked list and availability summary can render before the mapping library. The browser test now waits for all three map markers before capturing visual evidence.
 7. Remaining variance is intentional: live map imagery, required map attribution, and compact unselected vehicle icons. No actionable P0, P1 or P2 fidelity issues remain.
+8. Added the real ride-plan, immediate/timed reservation, borrow confirmation, current-ride timer, reminder/return/reborrow choices, and photo-free return direction as scrollable bottom-sheet content. Destructive actions use a second confirmation without displacing the list-first home screen.
+9. Browser coverage now runs the full Email OTP interaction, scheduled-reservation create/cancel, borrow with a 1:29 automatic-return request, explicit return-and-reborrow confirmation, and manual-return confirmation against intercepted mutations.
+10. A real authenticated staging pass verified 24 live scooters, exact battery values, 11 available scooters, the account's Starter plan, keyboard dismissal between sheets, and zero browser console errors. It also caught and fixed the initial-data delay and the incorrect `unavailable` → `電量不足` label.
 
 ## Final result
 

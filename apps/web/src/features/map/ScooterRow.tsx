@@ -8,7 +8,7 @@ interface ScooterRowProps {
 }
 
 export function ScooterRow({ scooter, selected, onSelect }: ScooterRowProps) {
-	const available = scooter.availability === "available";
+	const availabilityLabel = scooter.availability === "available" ? "可借" : scooter.availability === "low_battery" ? "電量不足" : "暫不可借";
 
 	return (
 		<button className="scooter-row" data-selected={selected} type="button" aria-pressed={selected} onClick={onSelect}>
@@ -29,8 +29,8 @@ export function ScooterRow({ scooter, selected, onSelect }: ScooterRowProps) {
 					<RoadHorizon size={18} weight="bold" />約 {scooter.rangeKm} 公里
 				</span>
 			</span>
-			<span className="availability-pill" data-available={available}>
-				{available ? "可借" : "電量不足"}
+			<span className="availability-pill" data-state={scooter.availability}>
+				{availabilityLabel}
 			</span>
 		</button>
 	);

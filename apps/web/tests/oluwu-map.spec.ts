@@ -64,6 +64,8 @@ test("email login, scheduled reservation, timed ride and return confirmations wo
 
 	await screen.getByRole("button", { name: "借用資訊" }).click();
 	await expect(screen.getByText("普通費率")).toBeVisible();
+	await page.waitForTimeout(500);
+	await screen.screenshot({ path: "design/implementation-borrow.png" });
 	await screen.getByRole("radio", { name: "5 分" }).first().click();
 	await screen.getByRole("button", { name: "設定 5 分後預約" }).click();
 	await expect(screen.getByText("將預約 JZ-333")).toBeVisible();
@@ -81,6 +83,8 @@ test("email login, scheduled reservation, timed ride and return confirmations wo
 	expect(rentRequest?.body).toMatchObject({ scooterId: 12, automation: { action: "return", afterRideSeconds: 89 } });
 
 	await screen.getByRole("button", { name: "管理騎乘" }).click();
+	await page.waitForTimeout(500);
+	await screen.screenshot({ path: "design/implementation-ride.png" });
 	await screen.getByRole("radio", { name: "歸還並重借" }).click();
 	await screen.getByRole("button", { name: "設定歸還並重借" }).click();
 	await expect(screen.getByText(/可能開始下一段計費/)).toBeVisible();

@@ -303,9 +303,14 @@
 	white-space: nowrap;
 }
 
-.availability-pill[data-available="true"] {
+.availability-pill[data-state="available"] {
 	color: var(--oluwu-ink-strong);
 	background: #b9f0d5;
+}
+
+.availability-pill[data-state="unavailable"] {
+	color: #53615d;
+	background: #e8edeb;
 }
 
 .reason-disclosure {

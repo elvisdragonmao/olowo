@@ -10,7 +10,7 @@ export function useFleetQuery() {
 	return useQuery({
 		queryKey: ["fleet", "nearby"],
 		queryFn: getFleetSummary,
-		initialData: demoFleet,
+		placeholderData: demoFleet,
 		retry: 1,
 		refetchInterval: 30_000
 	});

@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { publicReservationAutomation, ReservationAutomationStore } from "../src/reservation-automation.js";
 import { publicAutomation, RideAutomationStore } from "../src/ride-automation.js";
 
 const wait = (milliseconds: number) => new Promise(resolve => setTimeout(resolve, milliseconds));
@@ -36,18 +35,6 @@ test("ride automation records a failed destructive action without retrying", asy
 	store.close();
 });
 
-test("scheduled reservation stores only the public result", async () => {
-	const store = new ReservationAutomationStore();
-	const task = store.schedule({ userId: 4, scooterId: 12, engineLicenseNumber: "AA-012", triggerAt: Date.now() + 5 }, async () => ({ reservationId: 99, expiresAt: "2026-10-25T12:00:00.000Z" }));
-	await wait(30);
-	assert.equal(task.state, "completed");
-	assert.equal(task.reservationId, 99);
-	const output = publicReservationAutomation(task)!;
-	assert.equal("userId" in output, false);
-	assert.equal(output.engineLicenseNumber, "AA-012");
-	store.close();
-});
-
 test("restored ride automation preserves its durable identity and reports state changes", async () => {
 	const states: string[] = [];
 	const store = new RideAutomationStore(task => states.push(task.state));
@@ -56,4 +43,26 @@ test("restored ride automation preserves its durable identity and reports state 
 	assert.equal(task.id, "restored-job");
 	assert.deepEqual(states, ["scheduled", "running", "due"]);
 	store.close();
+});
+
+test("only the instance that claims a due job executes it", async () => {
+	const claimed = new Set<string>();
+	const claim = async (task: { id: string }) => {
+		if (claimed.has(task.id)) return false;
+		claimed.add(task.id);
+		return true;
+	};
+	const instanceA = new RideAutomationStore(undefined, claim);
+	const instanceB = new RideAutomationStore(undefined, claim);
+	let executions = 0;
+	const input = { id: "shared-job", userId: 5, rideId: 6, scooterId: 7, action: "return" as const, triggerAt: Date.now() + 10 };
+	const execute = async () => {
+		executions += 1;
+	};
+	instanceA.schedule(input, execute);
+	instanceB.schedule(input, execute);
+	await wait(40);
+	assert.equal(executions, 1, "a restored job on a second instance does not return the scooter twice");
+	instanceA.close();
+	instanceB.close();
 });

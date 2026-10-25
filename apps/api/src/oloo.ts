@@ -15,7 +15,8 @@ export async function olooRequest<T>(baseUrl: string, path: string, token: strin
 		headers: {
 			accept: "application/json",
 			authorization: token,
-			...(init?.body ? { "content-type": "application/json" } : {}),
+			// JSON for string bodies; FormData sets its own multipart boundary.
+			...(typeof init?.body === "string" ? { "content-type": "application/json" } : {}),
 			...init?.headers
 		},
 		signal: init?.signal ?? AbortSignal.timeout(20_000)

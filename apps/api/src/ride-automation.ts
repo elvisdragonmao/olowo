@@ -22,9 +22,12 @@ type RideAutomationInput = Omit<RideAutomation, "id" | "state" | "error" | "crea
 export class RideAutomationStore {
 	readonly #automations = new Map<string, RideAutomation>();
 	readonly #onChange?: (automation: RideAutomation) => void;
+	readonly #claim?: (automation: RideAutomation) => Promise<boolean>;
 
-	constructor(onChange?: (automation: RideAutomation) => void) {
+	/** `claim` lets a shared database decide which API instance executes a due job. */
+	constructor(onChange?: (automation: RideAutomation) => void, claim?: (automation: RideAutomation) => Promise<boolean>) {
 		this.#onChange = onChange;
+		this.#claim = claim;
 	}
 
 	schedule(input: RideAutomationInput, execute: (automation: RideAutomation) => Promise<void>) {
@@ -34,6 +37,11 @@ export class RideAutomationStore {
 		const automation: RideAutomation = { ...input, id: input.id ?? randomUUID(), state: "scheduled", createdAt: input.createdAt ?? now, updatedAt: now };
 		automation.timer = setTimeout(
 			async () => {
+				if (this.#claim && !(await this.#claim(automation).catch(() => false))) {
+					// Another instance owns this job; forget the local copy without reporting a state change.
+					if (this.#automations.get(key) === automation) this.#automations.delete(key);
+					return;
+				}
 				automation.state = "running";
 				automation.updatedAt = Date.now();
 				this.#onChange?.(automation);

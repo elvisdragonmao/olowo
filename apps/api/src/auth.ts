@@ -1,6 +1,7 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID } from "node:crypto";
 import type pg from "pg";
 import { z } from "zod";
+import { olooRequest } from "./oloo.js";
 
 const roleSchema = z.union([z.string(), z.object({ name: z.string() })]).transform(role => (typeof role === "string" ? role : role.name));
 
@@ -16,7 +17,26 @@ export interface ProviderSession {
 	userId: number;
 	roles: string[];
 	accessToken: string;
+	issuedAt: number;
 	expiresAt: number;
+}
+
+/** Issue and expiry times from the provider JWT; falls back to `ttlSeconds` when the token carries no `exp`. */
+export function tokenLifetime(token: string, ttlSeconds?: number) {
+	let payload: { iat?: unknown; exp?: unknown } = {};
+	try {
+		payload = JSON.parse(Buffer.from(token.split(".")[1] ?? "", "base64url").toString("utf8")) as typeof payload;
+	} catch {
+		// Opaque token: rely on the provider ttl.
+	}
+	const issuedAt = typeof payload.iat === "number" ? payload.iat * 1000 : Date.now();
+	const expiresAt = typeof payload.exp === "number" ? payload.exp * 1000 : issuedAt + (ttlSeconds ?? 0) * 1000;
+	return { issuedAt, expiresAt };
+}
+
+/** Refresh once half of the provider token lifetime has passed. */
+export function needsRefresh(session: ProviderSession, now = Date.now()) {
+	return now >= session.issuedAt + (session.expiresAt - session.issuedAt) / 2 && now < session.expiresAt;
 }
 
 export class SessionStore {
@@ -32,14 +52,13 @@ export class SessionStore {
 
 	async create(login: z.infer<typeof loginResponseSchema>) {
 		const id = randomUUID();
-		const payload = JSON.parse(Buffer.from(login.accessToken.id.split(".")[1] ?? "", "base64url").toString("utf8")) as { exp?: number };
 		const session: ProviderSession = {
 			id,
 			email: login.user.email,
 			userId: login.user.userId,
 			roles: login.user.roles,
 			accessToken: login.accessToken.id,
-			expiresAt: typeof payload.exp === "number" ? payload.exp * 1000 : Date.now() + login.accessToken.ttl * 1000
+			...tokenLifetime(login.accessToken.id, login.accessToken.ttl)
 		};
 		this.#sessions.set(id, session);
 		if (this.#database && this.#encryptionKey) {
@@ -104,12 +123,14 @@ export class SessionStore {
 		);
 		const row = result.rows[0];
 		if (!row) return null;
+		const accessToken = decryptToken(row.ciphertext, this.#encryptionKey);
 		const restored: ProviderSession = {
 			id,
 			email: row.email,
 			userId: Number(row.provider_user_id),
 			roles: z.array(z.string()).parse(row.roles),
-			accessToken: decryptToken(row.ciphertext, this.#encryptionKey),
+			accessToken,
+			issuedAt: tokenLifetime(accessToken).issuedAt,
 			expiresAt: row.expires_at.getTime()
 		};
 		this.#sessions.set(id, restored);
@@ -136,14 +157,39 @@ export class SessionStore {
 		);
 		const row = result.rows[0];
 		if (!row) return null;
+		const accessToken = decryptToken(row.ciphertext, this.#encryptionKey);
 		return {
 			id: `restored:${userId}`,
 			email: row.email,
 			userId: Number(row.provider_user_id),
 			roles: z.array(z.string()).parse(row.roles),
-			accessToken: decryptToken(row.ciphertext, this.#encryptionKey),
+			accessToken,
+			issuedAt: tokenLifetime(accessToken).issuedAt,
 			expiresAt: row.expires_at.getTime()
 		} satisfies ProviderSession;
+	}
+
+	/** Swap in a refreshed provider token for this session and the user's stored credential. */
+	async replaceToken(session: ProviderSession, token: { id: string; ttl?: number }) {
+		const lifetime = tokenLifetime(token.id, token.ttl);
+		session.accessToken = token.id;
+		session.issuedAt = lifetime.issuedAt;
+		session.expiresAt = lifetime.expiresAt;
+		for (const other of this.#sessions.values()) {
+			if (other.userId !== session.userId || other === session) continue;
+			Object.assign(other, { accessToken: token.id, ...lifetime });
+		}
+		if (!this.#database || !this.#encryptionKey) return;
+		await this.#database.query(
+			`UPDATE provider_credentials p SET ciphertext = $2, updated_at = now()
+			 FROM users u WHERE u.id = p.user_id AND u.provider_user_id = $1`,
+			[session.userId, encryptToken(token.id, this.#encryptionKey)]
+		);
+		await this.#database.query(
+			`UPDATE sessions s SET expires_at = $2
+			 FROM users u WHERE u.id = s.user_id AND u.provider_user_id = $1 AND s.expires_at > now()`,
+			[session.userId, new Date(lifetime.expiresAt)]
+		);
 	}
 
 	async delete(id?: string) {
@@ -194,6 +240,13 @@ export async function startEmailLogin(baseUrl: string, email: string) {
 
 export async function verifyEmailLogin(baseUrl: string, email: string, captcha: string) {
 	return loginResponseSchema.parse(await postJson(baseUrl, "accounts/login-by-email-verification-with-numeric-captcha", { email, captcha }));
+}
+
+const keepLoginSchema = z.object({ token: z.object({ id: z.string().min(20), ttl: z.number().optional() }) });
+
+/** Provider token refresh observed in the August capture: POST with the current token, no body. */
+export async function keepLogin(baseUrl: string, accessToken: string) {
+	return keepLoginSchema.parse(await olooRequest<unknown>(baseUrl, "/accounts/keep-login", accessToken, { method: "POST" })).token;
 }
 
 export function publicSession(session: ProviderSession) {

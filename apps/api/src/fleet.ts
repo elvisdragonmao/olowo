@@ -8,7 +8,15 @@ export interface ScooterSummary {
 	availability: "available" | "low_battery" | "unavailable";
 }
 
-export const demoFleet = {
+export interface FleetSummary {
+	totalCount: number;
+	availableCount: number;
+	unavailableCount: number;
+	reasons: { lowBattery: number; hardware: number; location: number };
+	scooters: ScooterSummary[];
+}
+
+export const demoFleet: FleetSummary = {
 	totalCount: 24,
 	availableCount: 9,
 	unavailableCount: 15,

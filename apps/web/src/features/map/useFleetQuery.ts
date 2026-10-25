@@ -14,6 +14,7 @@ export function useFleetQuery() {
 		queryKey: ["fleet", "nearby"],
 		queryFn: getFleetSummary,
 		initialData: demoFleet,
-		retry: 1
+		retry: 1,
+		refetchInterval: 30_000
 	});
 }

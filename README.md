@@ -20,6 +20,8 @@ Web 預設為 `http://127.0.0.1:5173`，API 為 `http://127.0.0.1:8787`。前端
 
 PostgreSQL 初始 schema 位於 `apps/api/sql/001_initial.sql`。複製 `apps/api/.env.example` 為本機 `.env` 後再填入資料庫連線；不要提交實際帳密或 oloo token。
 
+若後端設定 `OLOO_ACCESS_TOKEN`，唯讀 fleet adapter 會從 staging 取得車輛資訊與狀態、在記憶體快取 25 秒、只保留附近 24 台的公開欄位，再提供給前端；沒有設定時使用 demo fleet。Token 不會進入網址或瀏覽器。借車、還車與付款 mutation 仍固定停用，直到完成操作員核准的 staging 驗證。
+
 重新產生已遮蔽敏感值的 HAR inventory：
 
 ```sh

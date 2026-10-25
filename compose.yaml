@@ -1,0 +1,59 @@
+# One file for both environments.
+#   dev:  docker compose up -d db        (then `pnpm dev`; the API connects to 127.0.0.1:5432)
+#   prod: docker compose up -d --build   (db + api + web on http://localhost:8080, or SITE_ADDRESS for HTTPS)
+# Values come from ./.env (see .env.example).
+name: olowo
+
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: olowo
+      POSTGRES_USER: olowo
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-olowo}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U olowo -d olowo"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      target: api
+    environment:
+      DATABASE_URL: postgres://olowo:${POSTGRES_PASSWORD:-olowo}@db:5432/olowo
+      SESSION_ENCRYPTION_KEY: ${SESSION_ENCRYPTION_KEY:-}
+      WEB_ORIGINS: ${PUBLIC_ORIGIN:-http://localhost:8080}
+      OLOO_API_BASE_URL: ${OLOO_API_BASE_URL:-https://looplus-api-staging.loopluscooter.com/nest/api}
+      OLOO_ACCESS_TOKEN: ${OLOO_ACCESS_TOKEN:-}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      target: web
+      args:
+        VITE_MAPBOX_ACCESS_TOKEN: ${VITE_MAPBOX_ACCESS_TOKEN:-}
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-:80}
+    ports:
+      - "${HTTP_PORT:-8080}:80"
+      - "${HTTPS_PORT:-8443}:443"
+    volumes:
+      - caddy-data:/data
+    depends_on:
+      - api
+    restart: unless-stopped
+
+volumes:
+  db-data:
+  caddy-data:

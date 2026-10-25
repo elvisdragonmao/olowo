@@ -1,0 +1,19 @@
+# Serves the PWA and proxies the API on the same origin so the HttpOnly session cookie stays first-party.
+# SITE_ADDRESS=":80" for plain HTTP behind another proxy, or a domain (e.g. olowo.example.com) for automatic HTTPS.
+{$SITE_ADDRESS::80} {
+	encode zstd gzip
+
+	handle /v1/* {
+		reverse_proxy api:8787
+	}
+
+	handle {
+		root * /srv
+		@hashed path_regexp ^/assets/[^/]+-[A-Za-z0-9_-]{8}\.(js|css)$
+		header @hashed Cache-Control "public, max-age=31536000, immutable"
+		@shell path / /index.html /sw.js /manifest.webmanifest
+		header @shell Cache-Control "no-cache"
+		try_files {path} /index.html
+		file_server
+	}
+}

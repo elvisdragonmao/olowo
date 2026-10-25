@@ -13,10 +13,12 @@
 
 ```sh
 pnpm install
-pnpm dev:web
+pnpm dev
 ```
 
-前端目前使用研究所得的安全示範資料，尚未把登入、借車或還車操作接到 oloo。所有上游 token 都必須留在後端，不能放進 PWA。
+Web 預設為 `http://127.0.0.1:5173`，API 為 `http://127.0.0.1:8787`。前端會從 Fastify 的 `/v1/map/scooters` 讀取安全示範資料。Email 登入、借車與還車在取得並驗證上游協定以前維持停用；所有上游 token 都必須留在後端，不能放進 PWA。
+
+PostgreSQL 初始 schema 位於 `apps/api/sql/001_initial.sql`。複製 `apps/api/.env.example` 為本機 `.env` 後再填入資料庫連線；不要提交實際帳密或 oloo token。
 
 重新產生已遮蔽敏感值的 HAR inventory：
 

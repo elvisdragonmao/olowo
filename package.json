@@ -3,8 +3,10 @@
 	"private": true,
 	"type": "module",
 	"scripts": {
-		"build": "pnpm run build:web",
+		"build": "pnpm -r --if-present build",
 		"build:web": "pnpm --filter @oluwu/web build",
+		"dev": "pnpm --parallel --filter './apps/*' dev",
+		"dev:api": "pnpm --filter @oluwu/api dev",
 		"dev:web": "pnpm --filter @oluwu/web dev",
 		"format": "prettier --write .",
 		"format:check": "prettier --check .",

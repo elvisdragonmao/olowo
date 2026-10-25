@@ -31,5 +31,11 @@ jobs:
       - name: Check formatting
         run: pnpm run format:check
 
-      - name: Build Astro site
+      - name: Build
         run: pnpm run build
+
+      - name: Install Playwright Chromium
+        run: pnpm --filter @olowo/web exec playwright install --with-deps chromium
+
+      - name: Test
+        run: pnpm test

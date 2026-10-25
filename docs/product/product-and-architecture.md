@@ -16,7 +16,7 @@ It keeps oloo's green identity but does not copy the current app's information a
 - Separate official facts from oluwu inference. Every inferred unavailable reason carries a confidence level.
 - Make one primary action obvious on each screen.
 - Keep warnings adjacent to the action they affect.
-- Never claim a background timer is exact when the browser cannot guarantee it.
+- Keep authoritative timers on Fastify; browser timers are display-only.
 - Preserve ride completion state through refreshes, crashes, and flaky uploads.
 - Use concise Traditional Chinese. Avoid eyebrow labels, motivational filler, and redundant explanations.
 
@@ -56,33 +56,31 @@ Mobile navigation should expose Map, Ride, Activity and Account. Ride replaces i
 
 - Elapsed time and estimated current charge dominate the screen.
 - Return-by target and next billing boundary are visible without scrolling.
-- A cost guard notifies at a user-selected time or projected amount and requires confirmation before return.
+- A rider can choose a reminder, automatic return, or return-and-reborrow for a fixed ride duration. Destructive choices require an explicit confirmation and remain cancellable before execution.
 - Power/lock controls appear only when the current ride and upstream permission allow them.
-- Return readiness checks location/e-fence, scooter state, network and camera/storage before the user starts the final flow.
+- Return readiness checks current ride ownership and vehicle identity before the server sends a return command.
 
-### Return photo
+### Photo-free return direction
 
-- Capture a genuine image in-app.
-- Downscale and compress locally to a documented maximum before upload.
-- Strip unnecessary EXIF while preserving orientation.
-- Store the pending blob in IndexedDB until an upload receipt is confirmed.
-- Resume upload and checkout after refresh or crash.
-- Never substitute a blank, stock, or unrelated image and never claim the provider requirement can be skipped.
+- The rider stops and locks the scooter, then confirms return without opening a camera screen.
+- The server re-reads the active ride and requires the ride ID and scooter ID to match before returning.
+- The UI only shows completion after the upstream state confirms it; a timeout or rejection leaves the ride visible.
+- The August HAR proves that the old checkout accepted `firstImgId`. Until staging removes that field or provides a photo-free checkout contract, oluwu does not upload blank/stock files and does not label billing checkout complete.
+- This separation lets the CEO demo show the planned WeMo/GoShare-style interaction without pretending that the old checkout contract has already changed.
 
 ## Feature decision table
 
-| Requested idea                            | Product decision                             | Reason                                                                                |
-| ----------------------------------------- | -------------------------------------------- | ------------------------------------------------------------------------------------- |
-| exact battery percentage                  | build in MVP                                 | directly available in scooter status                                                  |
-| exact scooter location                    | build in MVP with freshness/accuracy         | coordinates are available; stale/invalid GPS must be explicit                         |
-| unavailable-reason counts                 | build in MVP as explained inference          | supported by joined status and report evidence                                        |
-| timed return                              | build as notification plus user confirmation | PWA background timers are not exact; return changes billing/state                     |
-| automatic return                          | gated experiment only                        | requires server scheduling, idempotency, operator agreement and staging vehicle tests |
-| return and automatically reborrow at 1:29 | do not ship                                  | can double-charge, lose the vehicle, bypass availability rules or leave unsafe state  |
-| skip return photo                         | do not implement                             | captured checkout uses an uploaded image ID; bypass semantics are unproven            |
-| upload a smaller photo                    | build safely                                 | compress a genuine image and make upload resumable                                    |
-| scheduled reservation                     | design now; enable after mutation capture    | current reservation reads exist, but create/cancel contracts are missing              |
-| email login                               | build after capturing auth flow              | APK proves email flows exist, but HAR lacks endpoint contracts                        |
+| Requested idea                            | Product decision                          | Reason                                                                                 |
+| ----------------------------------------- | ----------------------------------------- | -------------------------------------------------------------------------------------- |
+| exact battery percentage                  | build in MVP                              | directly available in scooter status                                                   |
+| exact scooter location                    | build in MVP with freshness/accuracy      | coordinates are available; stale/invalid GPS must be explicit                          |
+| unavailable-reason counts                 | build in MVP as explained inference       | supported by joined status and report evidence                                         |
+| timed reminder                            | implemented                               | server timer remains reliable when the PWA is backgrounded                             |
+| automatic return                          | implemented with confirmation and recheck | CEO authorized; job locks to one active ride and stops on ambiguity                    |
+| return and automatically reborrow at 1:29 | implemented as explicit opt-in            | confirms next billing segment, rechecks ride, returns first, and never retries failure |
+| photo-free return UI                      | implemented; checkout contract pending    | matches planned provider direction without forging an image                            |
+| scheduled reservation                     | implemented                               | create/cancel contracts recovered and server rechecks state at trigger                 |
+| email login                               | implemented and staging-verified          | exact six-digit OTP endpoints recovered and tested                                     |
 
 ## Recommended monorepo
 
@@ -132,27 +130,27 @@ Fastify is not a thin CORS relay. It is the security and reliability boundary:
 4. remove operational secrets and PII;
 5. cache with ETag-aware refresh and publish small deltas;
 6. enforce current-user ownership on mutations;
-7. apply idempotency and reconciliation to rent/return/checkout;
-8. compress/validate upload metadata and retain upload receipts;
-9. deliver cost-guard notifications;
-10. write redacted audit events.
+7. apply idempotency and current-state reconciliation to rent/return/reservation;
+8. execute ride and reservation timers independently of browser suspension;
+9. retain provider credentials only in memory or encrypted PostgreSQL storage;
+10. keep checkout/photo state explicit until the provider's new no-photo contract exists.
 
 Recommended public endpoints:
 
-| Method | Route                          | Purpose                                                      |
-| ------ | ------------------------------ | ------------------------------------------------------------ |
-| POST   | `/v1/auth/email/start`         | begin captured provider email flow                           |
-| POST   | `/v1/auth/email/verify`        | verify and create oluwu session                              |
-| POST   | `/v1/auth/logout`              | revoke local session and provider credential where supported |
-| GET    | `/v1/map/scooters`             | region-bounded sanitized fleet DTOs                          |
-| GET    | `/v1/map/availability-summary` | reason counts for bounds/station                             |
-| GET    | `/v1/rides/current`            | canonical current ride and completion state                  |
-| POST   | `/v1/rides`                    | borrow with idempotency key                                  |
-| POST   | `/v1/rides/:id/return`         | request return and reconcile upstream state                  |
-| POST   | `/v1/rides/:id/photo`          | upload genuine compressed return image                       |
-| POST   | `/v1/rides/:id/checkout`       | checkout with confirmed image receipt                        |
-| PUT    | `/v1/rides/:id/cost-guard`     | configure notification threshold                             |
-| GET    | `/v1/reservations/current`     | normalized current reservation                               |
+| Method         | Route                          | Purpose                                                      |
+| -------------- | ------------------------------ | ------------------------------------------------------------ |
+| POST           | `/v1/auth/email/start`         | begin captured provider email flow                           |
+| POST           | `/v1/auth/email/verify`        | verify and create oluwu session                              |
+| POST           | `/v1/auth/logout`              | revoke local session and provider credential where supported |
+| GET            | `/v1/map/scooters`             | region-bounded sanitized fleet DTOs                          |
+| GET            | `/v1/map/availability-summary` | reason counts for bounds/station                             |
+| GET            | `/v1/rides/current`            | canonical current ride and completion state                  |
+| POST           | `/v1/rides`                    | borrow with idempotency key                                  |
+| POST           | `/v1/rides/:id/return`         | request return and reconcile upstream state                  |
+| GET/PUT/DELETE | `/v1/rides/:id/automation`     | inspect, configure or cancel a ride timer                    |
+| GET            | `/v1/reservations/current`     | normalized current reservation                               |
+| POST/DELETE    | `/v1/reservations[/:id]`       | create or cancel a reservation                               |
+| GET/PUT/DELETE | `/v1/reservations/scheduled`   | inspect, configure or cancel a scheduled reservation         |
 
 ## PostgreSQL model
 
@@ -190,7 +188,7 @@ stateDiagram-v2
     Reconciling --> Failed: no ride found
 ```
 
-### Return and checkout
+### Return and planned photo-free checkout
 
 ```mermaid
 stateDiagram-v2
@@ -198,35 +196,35 @@ stateDiagram-v2
     Active --> Readiness: user starts return
     Readiness --> Active: outside zone or state invalid
     Readiness --> Returning: checks pass
-    Returning --> PhotoRequired: upstream confirms return
+    Returning --> Returned: upstream confirms return
     Returning --> Reconciling: ambiguous response
-    PhotoRequired --> Uploading: genuine photo captured
-    Uploading --> PhotoRequired: retryable failure
-    Uploading --> CheckoutReady: upload receipt confirmed
-    CheckoutReady --> CheckingOut: user confirms payment
+    Returned --> CheckoutReady: provider photo-free contract available
+    Returned --> ProviderGap: old staging still requires firstImgId
+    CheckoutReady --> CheckingOut: server confirms payment input
     CheckingOut --> Complete: receipt confirmed
     CheckingOut --> Reconciling: ambiguous response
 ```
 
 ## Scheduling model
 
-A PWA timer is suitable for visible countdowns, not authoritative state changes. Cost guards use this order:
+A PWA timer is suitable for visible countdowns, not authoritative state changes. oluwu uses this order:
 
 1. browser timer while visible;
 2. service-worker notification where supported;
-3. server-scheduled push notification for app-closed reliability;
-4. user confirmation opens the ride screen;
-5. server rechecks the current ride, location and price before returning.
+3. a Fastify timer for the selected action;
+4. one explicit confirmation when a destructive timer is created;
+5. server rechecks the exact current ride and scooter before returning;
+6. reborrow is attempted only after return succeeds and is never automatically retried.
 
-No server job should automatically reborrow. If automatic return is ever approved, it must be opt-in per ride, show the exact consequence, have a cancel window, lock to one ride ID, use an idempotency key, reconcile after timeouts, and stop rather than retry when state is ambiguous.
+With PostgreSQL configured, every scheduled-action transition is persisted and pending/interrupted jobs are restored at API startup using an unexpired encrypted provider session. An overdue action executes immediately only after the same state checks. Without PostgreSQL, the development fallback is process-resident and intentionally makes no restart guarantee.
 
 ## Validation gates before live mutations
 
-- capture the email authentication flow without placing credentials in the HAR;
+- email authentication contract captured and verified with the authorized account;
 - obtain an operator-approved staging account and known staging scooter;
-- document reservation create/cancel requests;
+- reservation create/cancel requests recovered from the app and implemented;
 - confirm photo size, type and content rules;
-- confirm whether return and checkout are independently reversible;
+- confirm the operator's final photo-free checkout contract;
 - exercise timeout/retry/idempotency cases;
 - verify no token, PII, device secret or EXIF enters logs;
 - add a runtime kill switch for every mutation family;

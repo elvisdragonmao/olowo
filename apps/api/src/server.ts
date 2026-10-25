@@ -10,6 +10,7 @@ import { olooRequest, OlooUpstreamError, resolveProviderScooter } from "./oloo.j
 import { fetchOlooFleet } from "./oloo-fleet.js";
 import { publicReservationAutomation, ReservationAutomationStore } from "./reservation-automation.js";
 import { publicAutomation, RideAutomationStore } from "./ride-automation.js";
+import { ScheduledActionRepository, type StoredScheduledAction } from "./scheduled-action-repository.js";
 
 try {
 	loadEnvFile();
@@ -25,6 +26,10 @@ const environment = z
 			.default("http://127.0.0.1:5173,http://localhost:5173,http://127.0.0.1:4173")
 			.transform(value => value.split(",").map(origin => z.string().url().parse(origin.trim()))),
 		DATABASE_URL: z.string().url().optional(),
+		SESSION_ENCRYPTION_KEY: z
+			.string()
+			.regex(/^[0-9a-fA-F]{64}$/)
+			.optional(),
 		NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
 		OLOO_ACCESS_TOKEN: z.string().min(20).optional(),
 		OLOO_API_BASE_URL: z.string().url().default("https://looplus-api-staging.loopluscooter.com/nest/api")
@@ -33,12 +38,14 @@ const environment = z
 
 const app = Fastify({ logger: true, trustProxy: true });
 const database = createDatabase(environment.DATABASE_URL);
-const sessions = new SessionStore();
+const sessions = new SessionStore(database, environment.SESSION_ENCRYPTION_KEY);
 const sessionCookie = "oluwu_session";
 let fleetCache: { expiresAt: number; token: string; value: typeof demoFleet } | null = null;
 const actions = new Map<string, Promise<unknown>>();
-const rideAutomations = new RideAutomationStore();
-const reservationAutomations = new ReservationAutomationStore();
+const scheduledActions = new ScheduledActionRepository(database);
+const persistFailure = (kind: string, id: string, error: unknown) => app.log.error({ err: error, kind, scheduledActionId: id }, "failed to persist scheduled action");
+const rideAutomations = new RideAutomationStore(task => void scheduledActions.saveRide(task).catch(error => persistFailure("ride", task.id, error)));
+const reservationAutomations = new ReservationAutomationStore(task => void scheduledActions.saveReservation(task).catch(error => persistFailure("reservation", task.id, error)));
 
 interface ActiveRide {
 	id: number;
@@ -89,6 +96,12 @@ async function getActiveRide(session: ProviderSession): Promise<ActiveRide | nul
 	};
 }
 
+async function getCurrentReservations(session: ProviderSession) {
+	const value = await olooRequest<Record<string, unknown> | Array<Record<string, unknown>>>(environment.OLOO_API_BASE_URL, "/reservation/current", session.accessToken);
+	if (Array.isArray(value)) return value;
+	return value && typeof value === "object" && Object.keys(value).length > 0 ? [value] : [];
+}
+
 async function waitForActiveRide(session: ProviderSession, scooterId: number) {
 	for (let attempt = 0; attempt < 5; attempt += 1) {
 		const ride = await getActiveRide(session);
@@ -111,12 +124,11 @@ async function returnCurrentRide(session: ProviderSession, rideId: number, scoot
 	return { success: upstream.success !== false, rideId, scooter };
 }
 
-function scheduleRideAutomation(session: ProviderSession, ride: ActiveRide, action: "notify" | "return" | "return_and_reborrow", afterRideSeconds: number) {
-	const triggerAt = Date.parse(ride.startedAt) + afterRideSeconds * 1000;
-	if (!Number.isFinite(triggerAt) || triggerAt < Date.now() + 10_000) {
-		throw new OlooUpstreamError(409, "The selected ride timer has already passed or is too close to execute safely");
-	}
-	return rideAutomations.schedule({ userId: session.userId, rideId: ride.id, scooterId: ride.scooterId, action, triggerAt }, async task => {
+function startRideAutomation(
+	session: ProviderSession,
+	input: { id?: string; createdAt?: number; rideId: number; scooterId: number; action: "notify" | "return" | "return_and_reborrow"; triggerAt: number }
+) {
+	return rideAutomations.schedule({ userId: session.userId, ...input }, async task => {
 		if (task.action === "notify") return;
 		const returned = await returnCurrentRide(session, task.rideId, task.scooterId);
 		if (task.action === "return_and_reborrow") {
@@ -126,6 +138,28 @@ function scheduleRideAutomation(session: ProviderSession, ride: ActiveRide, acti
 				body: JSON.stringify({ imei: returned.scooter.imei, reservationId: null })
 			});
 		}
+	});
+}
+
+function scheduleRideAutomation(session: ProviderSession, ride: ActiveRide, action: "notify" | "return" | "return_and_reborrow", afterRideSeconds: number) {
+	const triggerAt = Date.parse(ride.startedAt) + afterRideSeconds * 1000;
+	if (!Number.isFinite(triggerAt) || triggerAt < Date.now() + 10_000) {
+		throw new OlooUpstreamError(409, "The selected ride timer has already passed or is too close to execute safely");
+	}
+	return startRideAutomation(session, { rideId: ride.id, scooterId: ride.scooterId, action, triggerAt });
+}
+
+function startReservationAutomation(session: ProviderSession, input: { id?: string; createdAt?: number; scooterId: number; engineLicenseNumber: string; triggerAt: number }) {
+	return reservationAutomations.schedule({ userId: session.userId, ...input }, async task => {
+		const activeReservations = await getCurrentReservations(session);
+		if (activeReservations.length > 0) throw new OlooUpstreamError(409, "An active reservation already exists");
+		const scooter = await resolveProviderScooter(environment.OLOO_API_BASE_URL, session.accessToken, task.scooterId);
+		if (scooter.EngineLicenseNumber !== task.engineLicenseNumber) throw new OlooUpstreamError(409, "Scooter identity changed");
+		const result = await olooRequest<Record<string, unknown>>(environment.OLOO_API_BASE_URL, "/reservation/scooters-info", session.accessToken, {
+			method: "POST",
+			body: JSON.stringify({ engineLicenseNumber: task.engineLicenseNumber })
+		});
+		return { reservationId: typeof result.id === "number" ? result.id : undefined, expiresAt: typeof result.expired === "string" ? result.expired : undefined };
 	});
 }
 
@@ -143,11 +177,11 @@ app.get("/v1/health", async () => {
 
 app.get("/v1/map/scooters", async (request, reply) => {
 	reply.header("cache-control", "private, max-age=15, stale-while-revalidate=30");
-	return getFleet(sessions.get(request.cookies[sessionCookie])?.accessToken);
+	return getFleet((await sessions.get(request.cookies[sessionCookie]))?.accessToken);
 });
 
 app.get("/v1/map/availability-summary", async request => {
-	const fleet = await getFleet(sessions.get(request.cookies[sessionCookie])?.accessToken);
+	const fleet = await getFleet((await sessions.get(request.cookies[sessionCookie]))?.accessToken);
 	return {
 		totalCount: fleet.totalCount,
 		availableCount: fleet.availableCount,
@@ -157,7 +191,7 @@ app.get("/v1/map/availability-summary", async request => {
 });
 
 app.get("/v1/scooters/:scooterId/ride-plan", async (request, reply) => {
-	const session = sessions.get(request.cookies[sessionCookie]);
+	const session = await sessions.get(request.cookies[sessionCookie]);
 	if (!session) return reply.code(401).send({ code: "AUTH_REQUIRED", message: "Please sign in" });
 	const { scooterId } = z.object({ scooterId: z.coerce.number().int().positive() }).parse(request.params);
 	const result = await olooRequest<Record<string, unknown>>(environment.OLOO_API_BASE_URL, `/scooters-infos/get-possible-ride-plan/${scooterId}`, session.accessToken);
@@ -165,13 +199,13 @@ app.get("/v1/scooters/:scooterId/ride-plan", async (request, reply) => {
 });
 
 app.get("/v1/rides/current", async (request, reply) => {
-	const session = sessions.get(request.cookies[sessionCookie]);
+	const session = await sessions.get(request.cookies[sessionCookie]);
 	if (!session) return reply.code(401).send({ code: "AUTH_REQUIRED", message: "Please sign in" });
 	return reply.send({ activeRide: await getActiveRide(session) });
 });
 
 app.post("/v1/rides", async (request, reply) => {
-	const session = sessions.get(request.cookies[sessionCookie]);
+	const session = await sessions.get(request.cookies[sessionCookie]);
 	if (!session) return reply.code(401).send({ code: "AUTH_REQUIRED", message: "Please sign in" });
 	const key = z.string().min(8).parse(request.headers["idempotency-key"]);
 	const body = z
@@ -198,13 +232,14 @@ app.post("/v1/rides", async (request, reply) => {
 		});
 		const ride = await waitForActiveRide(session, scooter.id);
 		const automation = body.automation ? scheduleRideAutomation(session, ride, body.automation.action, body.automation.afterRideSeconds) : null;
+		if (automation) await scheduledActions.saveRide(automation);
 		return { success: upstream.success !== false, scooterId: scooter.id, label: scooter.EngineLicenseNumber, activeRide: ride, automation: publicAutomation(automation) };
 	});
 	return reply.send(result);
 });
 
 app.post("/v1/rides/:rideId/return", async (request, reply) => {
-	const session = sessions.get(request.cookies[sessionCookie]);
+	const session = await sessions.get(request.cookies[sessionCookie]);
 	if (!session) return reply.code(401).send({ code: "AUTH_REQUIRED", message: "Please sign in" });
 	const key = z.string().min(8).parse(request.headers["idempotency-key"]);
 	const { rideId } = z.object({ rideId: z.coerce.number().int().positive() }).parse(request.params);
@@ -218,14 +253,14 @@ app.post("/v1/rides/:rideId/return", async (request, reply) => {
 });
 
 app.get("/v1/rides/:rideId/automation", async (request, reply) => {
-	const session = sessions.get(request.cookies[sessionCookie]);
+	const session = await sessions.get(request.cookies[sessionCookie]);
 	if (!session) return reply.code(401).send({ code: "AUTH_REQUIRED", message: "Please sign in" });
 	const { rideId } = z.object({ rideId: z.coerce.number().int().positive() }).parse(request.params);
 	return reply.send({ automation: publicAutomation(rideAutomations.get(session.userId, rideId)) });
 });
 
 app.put("/v1/rides/:rideId/automation", async (request, reply) => {
-	const session = sessions.get(request.cookies[sessionCookie]);
+	const session = await sessions.get(request.cookies[sessionCookie]);
 	if (!session) return reply.code(401).send({ code: "AUTH_REQUIRED", message: "Please sign in" });
 	const { rideId } = z.object({ rideId: z.coerce.number().int().positive() }).parse(request.params);
 	const body = z
@@ -241,11 +276,12 @@ app.put("/v1/rides/:rideId/automation", async (request, reply) => {
 	const active = await getActiveRide(session);
 	if (!active || active.id !== rideId) return reply.code(409).send({ code: "RIDE_CHANGED", message: "Active ride changed" });
 	const automation = scheduleRideAutomation(session, active, body.action, body.afterRideSeconds);
+	await scheduledActions.saveRide(automation);
 	return reply.send({ automation: publicAutomation(automation) });
 });
 
 app.delete("/v1/rides/:rideId/automation", async (request, reply) => {
-	const session = sessions.get(request.cookies[sessionCookie]);
+	const session = await sessions.get(request.cookies[sessionCookie]);
 	if (!session) return reply.code(401).send({ code: "AUTH_REQUIRED", message: "Please sign in" });
 	const { rideId } = z.object({ rideId: z.coerce.number().int().positive() }).parse(request.params);
 	rideAutomations.cancel(session.userId, rideId);
@@ -253,16 +289,16 @@ app.delete("/v1/rides/:rideId/automation", async (request, reply) => {
 });
 
 app.get("/v1/reservations/current", async (request, reply) => {
-	const session = sessions.get(request.cookies[sessionCookie]);
+	const session = await sessions.get(request.cookies[sessionCookie]);
 	if (!session) return reply.code(401).send({ code: "AUTH_REQUIRED", message: "Please sign in" });
-	const reservations = await olooRequest<Array<Record<string, unknown>>>(environment.OLOO_API_BASE_URL, "/reservation/overall-current", session.accessToken);
+	const reservations = await getCurrentReservations(session);
 	return reply.send(
 		reservations.map(item => ({
-			id: item.id,
+			id: item.id ?? item.reservationId,
 			type: item.type,
 			scooterId: item.scootersInfoId,
 			vehicleId: item.vehiclesInfoId,
-			label: item.EngineLicenseNumber,
+			label: item.EngineLicenseNumber ?? (item.scootersInfo && typeof item.scootersInfo === "object" ? (item.scootersInfo as Record<string, unknown>).EngineLicenseNumber : undefined),
 			createdAt: item.createdAt,
 			expiresAt: item.expired
 		}))
@@ -270,7 +306,7 @@ app.get("/v1/reservations/current", async (request, reply) => {
 });
 
 app.post("/v1/reservations", async (request, reply) => {
-	const session = sessions.get(request.cookies[sessionCookie]);
+	const session = await sessions.get(request.cookies[sessionCookie]);
 	if (!session) return reply.code(401).send({ code: "AUTH_REQUIRED", message: "Please sign in" });
 	const key = z.string().min(8).parse(request.headers["idempotency-key"]);
 	const { engineLicenseNumber } = z.object({ engineLicenseNumber: z.string().min(2).max(32) }).parse(request.body);
@@ -284,13 +320,13 @@ app.post("/v1/reservations", async (request, reply) => {
 });
 
 app.get("/v1/reservations/scheduled", async (request, reply) => {
-	const session = sessions.get(request.cookies[sessionCookie]);
+	const session = await sessions.get(request.cookies[sessionCookie]);
 	if (!session) return reply.code(401).send({ code: "AUTH_REQUIRED", message: "Please sign in" });
 	return reply.send({ schedule: publicReservationAutomation(reservationAutomations.get(session.userId)) });
 });
 
 app.put("/v1/reservations/scheduled", async (request, reply) => {
-	const session = sessions.get(request.cookies[sessionCookie]);
+	const session = await sessions.get(request.cookies[sessionCookie]);
 	if (!session) return reply.code(401).send({ code: "AUTH_REQUIRED", message: "Please sign in" });
 	const body = z
 		.object({
@@ -303,35 +339,24 @@ app.put("/v1/reservations/scheduled", async (request, reply) => {
 				.max(24 * 60 * 60)
 		})
 		.parse(request.body);
-	const automation = reservationAutomations.schedule(
-		{ userId: session.userId, scooterId: body.scooterId, engineLicenseNumber: body.engineLicenseNumber, triggerAt: Date.now() + body.secondsFromNow * 1000 },
-		async task => {
-			const activeReservations = await olooRequest<Array<Record<string, unknown>>>(environment.OLOO_API_BASE_URL, "/reservation/overall-current", session.accessToken);
-			if (activeReservations.length > 0) throw new OlooUpstreamError(409, "An active reservation already exists");
-			const scooter = await resolveProviderScooter(environment.OLOO_API_BASE_URL, session.accessToken, task.scooterId);
-			if (scooter.EngineLicenseNumber !== task.engineLicenseNumber) throw new OlooUpstreamError(409, "Scooter identity changed");
-			const result = await olooRequest<Record<string, unknown>>(environment.OLOO_API_BASE_URL, "/reservation/scooters-info", session.accessToken, {
-				method: "POST",
-				body: JSON.stringify({ engineLicenseNumber: task.engineLicenseNumber })
-			});
-			return {
-				reservationId: typeof result.id === "number" ? result.id : undefined,
-				expiresAt: typeof result.expired === "string" ? result.expired : undefined
-			};
-		}
-	);
+	const automation = startReservationAutomation(session, {
+		scooterId: body.scooterId,
+		engineLicenseNumber: body.engineLicenseNumber,
+		triggerAt: Date.now() + body.secondsFromNow * 1000
+	});
+	await scheduledActions.saveReservation(automation);
 	return reply.send({ schedule: publicReservationAutomation(automation) });
 });
 
 app.delete("/v1/reservations/scheduled", async (request, reply) => {
-	const session = sessions.get(request.cookies[sessionCookie]);
+	const session = await sessions.get(request.cookies[sessionCookie]);
 	if (!session) return reply.code(401).send({ code: "AUTH_REQUIRED", message: "Please sign in" });
 	reservationAutomations.cancel(session.userId);
 	return reply.send({ success: true });
 });
 
 app.delete("/v1/reservations/:reservationId", async (request, reply) => {
-	const session = sessions.get(request.cookies[sessionCookie]);
+	const session = await sessions.get(request.cookies[sessionCookie]);
 	if (!session) return reply.code(401).send({ code: "AUTH_REQUIRED", message: "Please sign in" });
 	const key = z.string().min(8).parse(request.headers["idempotency-key"]);
 	const { reservationId } = z.object({ reservationId: z.coerce.number().int().positive() }).parse(request.params);
@@ -342,7 +367,7 @@ app.delete("/v1/reservations/:reservationId", async (request, reply) => {
 });
 
 app.get("/v1/auth/session", async request => {
-	const session = sessions.get(request.cookies[sessionCookie]);
+	const session = await sessions.get(request.cookies[sessionCookie]);
 	return session ? publicSession(session) : { authenticated: false as const };
 });
 
@@ -355,7 +380,7 @@ app.post("/v1/auth/email/start", async (request, reply) => {
 app.post("/v1/auth/email/verify", async (request, reply) => {
 	const body = z.object({ email: z.string().email(), captcha: z.string().regex(/^\d{6}$/) }).parse(request.body);
 	const login = await verifyEmailLogin(environment.OLOO_API_BASE_URL, body.email, body.captcha);
-	const session = sessions.create(login);
+	const session = await sessions.create(login);
 	reply.setCookie(sessionCookie, session.id, {
 		path: "/",
 		httpOnly: true,
@@ -367,12 +392,12 @@ app.post("/v1/auth/email/verify", async (request, reply) => {
 });
 
 app.post("/v1/auth/logout", async (request, reply) => {
-	const session = sessions.get(request.cookies[sessionCookie]);
+	const session = await sessions.get(request.cookies[sessionCookie]);
 	if (session) {
 		rideAutomations.cancelForUser(session.userId);
 		reservationAutomations.cancel(session.userId);
 	}
-	sessions.delete(request.cookies[sessionCookie]);
+	await sessions.delete(request.cookies[sessionCookie]);
 	reply.clearCookie(sessionCookie, { path: "/" });
 	return reply.send({ success: true });
 });
@@ -395,5 +420,41 @@ app.addHook("onClose", async () => {
 	reservationAutomations.close();
 	await database?.end();
 });
+
+async function restoreScheduledAction(stored: StoredScheduledAction) {
+	const session = await sessions.getForProviderUser(stored.userId);
+	if (!session) {
+		await scheduledActions.fail(stored.id, "No unexpired provider session is available");
+		return;
+	}
+	if (stored.kind === "ride") {
+		startRideAutomation(session, {
+			id: stored.id,
+			createdAt: stored.createdAt,
+			rideId: stored.rideId,
+			scooterId: stored.scooterId,
+			action: stored.action,
+			triggerAt: stored.triggerAt
+		});
+		return;
+	}
+	startReservationAutomation(session, {
+		id: stored.id,
+		createdAt: stored.createdAt,
+		scooterId: stored.scooterId,
+		engineLicenseNumber: stored.engineLicenseNumber,
+		triggerAt: stored.triggerAt
+	});
+}
+
+for (const stored of await scheduledActions.loadPending()) {
+	try {
+		await restoreScheduledAction(stored);
+	} catch (error) {
+		const message = error instanceof Error ? error.message : "Failed to restore scheduled action";
+		await scheduledActions.fail(stored.id, message);
+		app.log.error({ err: error, scheduledActionId: stored.id }, "failed to restore scheduled action");
+	}
+}
 
 await app.listen({ host: "127.0.0.1", port: environment.PORT });

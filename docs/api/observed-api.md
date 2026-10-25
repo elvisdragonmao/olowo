@@ -8,9 +8,18 @@ Realtime endpoint: `/wss/`
 
 ## Authentication and caching
 
-The official client sent a bearer authorization header and duplicated the token in the `access_token` query parameter on most REST calls. The WebSocket used a `token` query parameter. The client also used `ETag`/`If-None-Match`; many configuration and account endpoints returned `304 Not Modified`.
+The captured client and the October 25, 2026 staging verification sent the JWT as the raw `Authorization` header value and duplicated it in the `access_token` query parameter on authenticated REST calls. `Bearer <token>` and header-only requests both returned `401` during verification. The WebSocket used a `token` query parameter. The client also used `ETag`/`If-None-Match`; many configuration and account endpoints returned `304 Not Modified`.
 
-oluwu must not expose provider tokens to browser JavaScript or URLs. Browser calls terminate at Fastify using an opaque session cookie. Fastify adds the upstream credential, strips sensitive response fields, applies timeouts, and maps upstream errors to a stable oluwu error envelope.
+oluwu does not expose provider tokens to browser JavaScript or browser URLs. Browser calls terminate at Fastify using an opaque HttpOnly session cookie. Fastify performs the upstream-only compatibility duplication, strips sensitive response fields, applies timeouts, and maps upstream errors to a stable oluwu error envelope.
+
+### Email OTP login (verified October 25, 2026)
+
+| Method | Path                                                                  | JSON body            | Result                                       |
+| ------ | --------------------------------------------------------------------- | -------------------- | -------------------------------------------- |
+| POST   | `/accounts/require-email-verification-for-login-with-numeric-captcha` | `{ email }`          | sends a six-digit code                       |
+| POST   | `/accounts/login-by-email-verification-with-numeric-captcha`          | `{ email, captcha }` | user object and provider access-token object |
+
+The JWT is `accessToken.id`; `accessToken` itself is an object. Roles are returned as role objects and oluwu normalizes their `name` fields before returning a public session.
 
 ## Complete observed endpoint inventory
 
@@ -66,12 +75,14 @@ oluwu must not expose provider tokens to browser JavaScript or URLs. Browser cal
 
 ### Reservations
 
-| Method | Path                           | Observed purpose                                         |
-| ------ | ------------------------------ | -------------------------------------------------------- |
-| GET    | `/reservation/current`         | current reservation object; empty object in this capture |
-| GET    | `/reservation/overall-current` | scooter/vehicle reservations and expiration              |
+| Method | Path                           | Request fields observed | Purpose                                    |
+| ------ | ------------------------------ | ----------------------- | ------------------------------------------ |
+| GET    | `/reservation/current`         | none                    | current account's reservation object       |
+| GET    | `/reservation/overall-current` | none                    | fleet-wide reserved vehicle IDs and expiry |
+| POST   | `/reservation/scooters-info`   | `engineLicenseNumber`   | reserve a scooter                          |
+| POST   | `/reservation/cancel`          | `reservationId`         | cancel an existing reservation             |
 
-Create and cancel operations were not captured. APK hook names suggest both exist, but their paths and schemas must not be invented.
+Create and cancel paths and payloads were recovered from the Hermes v96 bundle and matched against the staging service contract. Live read requests were executed; state-changing validation remains scoped to an explicitly selected staging scooter.
 
 ### Plans, contracts, coupons and payments
 
@@ -244,7 +255,7 @@ oluwu should normalize upstream errors as:
 }
 ```
 
-Every state-changing route must require an authenticated session, verify ownership/current-ride state, accept an idempotency key, store a redacted audit record, time out upstream calls, and reconcile state after an ambiguous network failure. The UI must not infer success from a disconnected request.
+Every state-changing route must require an authenticated session, verify ownership/current-ride state, accept an idempotency key where the browser initiates an immediate mutation, store a redacted audit record, time out upstream calls, and reconcile state after an ambiguous network failure. The UI must not infer success from a disconnected request. The current implementation verifies the active ride before return and before every scheduled destructive action; database-backed audit persistence and post-timeout reconciliation remain deployment hardening work.
 
 ## Reproducible inventory
 

@@ -13,7 +13,7 @@ export interface FleetSummary {
 	totalCount: number;
 	availableCount: number;
 	unavailableCount: number;
-	reasons: { lowBattery: number; hardware: number; location: number };
+	reasons: { lowBattery: number; hardware: number; location: number; reserved: number };
 	scooters: ScooterSummary[];
 }
 
@@ -21,7 +21,7 @@ export const demoFleet: FleetSummary = {
 	totalCount: 24,
 	availableCount: 9,
 	unavailableCount: 15,
-	reasons: { lowBattery: 8, hardware: 4, location: 3 },
+	reasons: { lowBattery: 8, hardware: 4, location: 3, reserved: 0 },
 	scooters: [
 		{ providerId: 12, id: "JZ-333", batteryPercent: 84, rangeKm: 18, walkMinutes: 2, latitude: 24.79315, longitude: 120.99327, availability: "available" },
 		{ providerId: 13, id: "JZ-551", batteryPercent: 62, rangeKm: 14, walkMinutes: 4, latitude: 24.79403, longitude: 120.99188, availability: "available" },

@@ -88,6 +88,8 @@ For each scooter, join `ScooterInfo` and the latest `ScooterStatus` on normalize
 
 Reason counts must be multi-label and disclose that totals can exceed the number of unavailable scooters. For a compact summary, apply a display precedence of rented, inactive, hardware, low battery, location, communication, unknown while retaining the complete reason set in diagnostics.
 
+Live verification clarified the reservation scope: `/reservation/current` is account-scoped, while `/reservation/overall-current` is the fleet-wide set used to suppress vehicles reserved by other riders. Treating `overall-current` as the user's reservations would expose irrelevant entries and incorrectly block all scheduled reservations whenever anyone else had one.
+
 ## Observed ride lifecycle
 
 The captured session shows this order:
@@ -113,7 +115,7 @@ The return-photo upload and final checkout are separate operations. The observed
 
 The HAR records `access_token` on nearly every API query string, a JWT path segment on an authentication route, and a `token` query parameter for WebSocket connections. One navigation analytics payload also contained a nested checkout object whose extra options included the bearer token.
 
-URL credentials can be retained by browser history, reverse proxies, CDN logs, analytics, crash reports, and screenshots. oluwu must never repeat this pattern. The Fastify backend should hold the provider credential, send it upstream only in the authorization header when the upstream accepts that form, and issue the browser an opaque, Secure, HttpOnly, SameSite session cookie.
+URL credentials can be retained by browser history, reverse proxies, CDN logs, analytics, crash reports, and screenshots. oluwu never repeats this pattern in browser traffic. October 25 staging checks found that the provider rejects header-only and `Bearer` requests and requires the raw JWT in both the `Authorization` header and `access_token` query. Fastify therefore performs that compatibility step only on its server-to-server connection and issues the browser an opaque, Secure, HttpOnly, SameSite session cookie.
 
 The token pasted into the project conversation should be treated as exposed and rotated, even though it is a staging token. It must not be committed, copied into `.env.example`, embedded in the PWA, or used in screenshots.
 
@@ -146,13 +148,13 @@ The first release should emphasize:
 7. stable email-session handling through the backend;
 8. clear e-fence, slow-zone, no-throttle, and return-zone layers.
 
-Automatic return/reborrow is not suitable as a PWA-only timer: browsers suspend background work, and the operation changes billing and vehicle state. The shippable feature is a server-backed cost guard that warns before a chosen threshold and presents a deliberate return confirmation. Fully automatic return can only be reconsidered after the operator confirms semantics and staging tests prove idempotency and recovery. Automatic reborrow should remain out of scope because it can create double billing, leave a vehicle unlocked, or defeat availability rules.
+Automatic return/reborrow is not suitable as a PWA-only timer: browsers suspend background work, and the operation changes billing and vehicle state. With explicit CEO authorization, oluwu implements it as a server-side, per-ride opt-in: the UI states the next billing consequence, requires confirmation, provides cancellation, rechecks the current ride, returns first, and stops rather than retrying an ambiguous failure. Production deployment still needs durable scheduler recovery and a known-vehicle mutation drill.
 
 ## Open evidence gaps
 
-- Email sign-in, verification, refresh, password reset, and logout were not present in the supplied HAR.
-- Reservation create/cancel mutations were not captured; only current-reservation reads and application hook names were observed.
+- Email sign-in was not present in the HAR; its exact request/verification endpoints were recovered from the Hermes bundle and successfully exercised on staging. Refresh and provider-side token revocation remain unverified.
+- Reservation create/cancel mutations were not in the HAR; their exact paths and payloads were recovered from the Hermes bundle. Live destructive validation still requires a named staging scooter.
 - The upstream final borrow-eligibility predicate is not documented.
-- CORS behavior for a browser origin was not tested because the intended architecture uses a backend proxy.
+- Direct provider CORS is intentionally irrelevant because the PWA only calls Fastify.
 - No Android runtime profiling or crash trace was provided, so traffic volume is a performance hypothesis rather than a crash root cause.
 - All observed API paths are staging behavior from August 2, 2026 and may drift.

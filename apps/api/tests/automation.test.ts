@@ -47,3 +47,13 @@ test("scheduled reservation stores only the public result", async () => {
 	assert.equal(output.engineLicenseNumber, "AA-012");
 	store.close();
 });
+
+test("restored ride automation preserves its durable identity and reports state changes", async () => {
+	const states: string[] = [];
+	const store = new RideAutomationStore(task => states.push(task.state));
+	const task = store.schedule({ id: "restored-job", createdAt: Date.now() - 5000, userId: 8, rideId: 9, scooterId: 10, action: "notify", triggerAt: Date.now() + 5 }, async () => undefined);
+	await wait(30);
+	assert.equal(task.id, "restored-job");
+	assert.deepEqual(states, ["scheduled", "running", "due"]);
+	store.close();
+});

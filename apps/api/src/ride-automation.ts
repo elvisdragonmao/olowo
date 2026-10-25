@@ -17,18 +17,26 @@ export interface RideAutomation {
 	timer?: NodeJS.Timeout;
 }
 
+type RideAutomationInput = Omit<RideAutomation, "id" | "state" | "error" | "createdAt" | "updatedAt" | "timer"> & { id?: string; createdAt?: number };
+
 export class RideAutomationStore {
 	readonly #automations = new Map<string, RideAutomation>();
+	readonly #onChange?: (automation: RideAutomation) => void;
 
-	schedule(input: Omit<RideAutomation, "id" | "state" | "error" | "createdAt" | "updatedAt" | "timer">, execute: (automation: RideAutomation) => Promise<void>) {
+	constructor(onChange?: (automation: RideAutomation) => void) {
+		this.#onChange = onChange;
+	}
+
+	schedule(input: RideAutomationInput, execute: (automation: RideAutomation) => Promise<void>) {
 		const key = `${input.userId}:${input.rideId}`;
 		this.cancel(input.userId, input.rideId);
 		const now = Date.now();
-		const automation: RideAutomation = { ...input, id: randomUUID(), state: "scheduled", createdAt: now, updatedAt: now };
+		const automation: RideAutomation = { ...input, id: input.id ?? randomUUID(), state: "scheduled", createdAt: input.createdAt ?? now, updatedAt: now };
 		automation.timer = setTimeout(
 			async () => {
 				automation.state = "running";
 				automation.updatedAt = Date.now();
+				this.#onChange?.(automation);
 				try {
 					await execute(automation);
 					automation.state = automation.action === "notify" ? "due" : "completed";
@@ -37,11 +45,13 @@ export class RideAutomationStore {
 					automation.error = error instanceof Error ? error.message : "Automation failed";
 				}
 				automation.updatedAt = Date.now();
+				this.#onChange?.(automation);
 			},
 			Math.max(0, input.triggerAt - Date.now())
 		);
 		automation.timer.unref();
 		this.#automations.set(key, automation);
+		this.#onChange?.(automation);
 		return automation;
 	}
 
@@ -55,14 +65,13 @@ export class RideAutomationStore {
 		if (automation.timer) clearTimeout(automation.timer);
 		automation.state = "cancelled";
 		automation.updatedAt = Date.now();
+		this.#onChange?.(automation);
 		this.#automations.delete(`${userId}:${rideId}`);
 		return true;
 	}
 
 	cancelForUser(userId: number) {
-		for (const automation of this.#automations.values()) {
-			if (automation.userId === userId) this.cancel(userId, automation.rideId);
-		}
+		for (const automation of this.#automations.values()) if (automation.userId === userId) this.cancel(userId, automation.rideId);
 	}
 
 	close() {

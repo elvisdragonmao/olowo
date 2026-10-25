@@ -17,20 +17,25 @@ export interface ReservationAutomation {
 	timer?: NodeJS.Timeout;
 }
 
+type ReservationAutomationInput = Pick<ReservationAutomation, "userId" | "scooterId" | "engineLicenseNumber" | "triggerAt"> & { id?: string; createdAt?: number };
+
 export class ReservationAutomationStore {
 	readonly #automations = new Map<number, ReservationAutomation>();
+	readonly #onChange?: (automation: ReservationAutomation) => void;
 
-	schedule(
-		input: Pick<ReservationAutomation, "userId" | "scooterId" | "engineLicenseNumber" | "triggerAt">,
-		execute: (automation: ReservationAutomation) => Promise<{ reservationId?: number; expiresAt?: string }>
-	) {
+	constructor(onChange?: (automation: ReservationAutomation) => void) {
+		this.#onChange = onChange;
+	}
+
+	schedule(input: ReservationAutomationInput, execute: (automation: ReservationAutomation) => Promise<{ reservationId?: number; expiresAt?: string }>) {
 		this.cancel(input.userId);
 		const now = Date.now();
-		const automation: ReservationAutomation = { ...input, id: randomUUID(), state: "scheduled", createdAt: now, updatedAt: now };
+		const automation: ReservationAutomation = { ...input, id: input.id ?? randomUUID(), state: "scheduled", createdAt: input.createdAt ?? now, updatedAt: now };
 		automation.timer = setTimeout(
 			async () => {
 				automation.state = "running";
 				automation.updatedAt = Date.now();
+				this.#onChange?.(automation);
 				try {
 					const result = await execute(automation);
 					automation.reservationId = result.reservationId;
@@ -41,11 +46,13 @@ export class ReservationAutomationStore {
 					automation.error = error instanceof Error ? error.message : "Scheduled reservation failed";
 				}
 				automation.updatedAt = Date.now();
+				this.#onChange?.(automation);
 			},
 			Math.max(0, input.triggerAt - now)
 		);
 		automation.timer.unref();
 		this.#automations.set(input.userId, automation);
+		this.#onChange?.(automation);
 		return automation;
 	}
 
@@ -59,6 +66,7 @@ export class ReservationAutomationStore {
 		if (automation.timer) clearTimeout(automation.timer);
 		automation.state = "cancelled";
 		automation.updatedAt = Date.now();
+		this.#onChange?.(automation);
 		this.#automations.delete(userId);
 		return true;
 	}

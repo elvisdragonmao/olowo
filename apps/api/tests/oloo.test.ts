@@ -37,11 +37,17 @@ test("fleet joins telemetry and classifies explainable availability", async () =
 		{ imei: "d", latitude: 24.7941, longitude: 120.9937, power: 90, errorMsg: null, updatedAt: now },
 		{ imei: "e", latitude: 24.7942, longitude: 120.9937, power: 90, errorMsg: "Connection: close", updatedAt: stale }
 	];
-	globalThis.fetch = async input => Response.json(input.toString().includes("scooter-statuses") ? statuses : infos);
+	globalThis.fetch = async input => {
+		const url = input.toString();
+		if (url.includes("scooter-statuses")) return Response.json(statuses);
+		if (url.includes("reservation/overall-current")) return Response.json([{ scootersInfoId: 1 }, { scootersInfoId: 5 }]);
+		if (url.includes("reservation/current")) return Response.json({ scootersInfoId: 1 });
+		return Response.json(infos);
+	};
 	const result = await fetchOlooFleet("https://provider.test/api", "token-value");
 	assert.equal(result.availableCount, 1);
 	assert.equal(result.unavailableCount, 4);
-	assert.deepEqual(result.reasons, { lowBattery: 1, hardware: 1, location: 1 });
+	assert.deepEqual(result.reasons, { lowBattery: 1, hardware: 1, location: 1, reserved: 1 });
 	assert.equal(result.scooters.find(item => item.id === "A-001")?.availability, "available");
 	assert.equal(result.scooters.find(item => item.id === "B-002")?.availability, "low_battery");
 	assert.equal(result.scooters.find(item => item.id === "C-003")?.availability, "unavailable");

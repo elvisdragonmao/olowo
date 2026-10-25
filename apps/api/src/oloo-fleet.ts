@@ -18,6 +18,10 @@ interface RawStatus {
 	updatedAt?: unknown;
 }
 
+interface RawReservation {
+	scootersInfoId?: unknown;
+}
+
 const origin = { latitude: 24.7938, longitude: 120.9937 };
 
 function asArray<T>(value: unknown): T[] {
@@ -63,11 +67,31 @@ export async function fetchOlooFleet(baseUrl: string, token: string): Promise<Fl
 	const statusesUrl = new URL(`${baseUrl}/scooter-statuses`);
 	infosUrl.searchParams.set("access_token", token);
 	statusesUrl.searchParams.set("access_token", token);
-	const [infosResponse, statusesResponse] = await Promise.all([fetch(infosUrl, { headers, signal }), fetch(statusesUrl, { headers, signal })]);
-	if (!infosResponse.ok || !statusesResponse.ok) throw new Error(`Upstream fleet failed: ${infosResponse.status}/${statusesResponse.status}`);
+	const overallReservationsUrl = new URL(`${baseUrl}/reservation/overall-current`);
+	const currentReservationUrl = new URL(`${baseUrl}/reservation/current`);
+	overallReservationsUrl.searchParams.set("access_token", token);
+	currentReservationUrl.searchParams.set("access_token", token);
+	const [infosResponse, statusesResponse, overallReservationsResponse, currentReservationResponse] = await Promise.all([
+		fetch(infosUrl, { headers, signal }),
+		fetch(statusesUrl, { headers, signal }),
+		fetch(overallReservationsUrl, { headers, signal }),
+		fetch(currentReservationUrl, { headers, signal })
+	]);
+	if (!infosResponse.ok || !statusesResponse.ok || !overallReservationsResponse.ok || !currentReservationResponse.ok) {
+		throw new Error(`Upstream fleet failed: ${infosResponse.status}/${statusesResponse.status}/${overallReservationsResponse.status}/${currentReservationResponse.status}`);
+	}
 
 	const infos = asArray<RawInfo>(await infosResponse.json());
 	const statuses = asArray<RawStatus>(await statusesResponse.json());
+	const overallReservations = asArray<RawReservation>(await overallReservationsResponse.json());
+	const currentReservationValue = (await currentReservationResponse.json()) as RawReservation | RawReservation[] | null;
+	const currentReservations = Array.isArray(currentReservationValue)
+		? currentReservationValue
+		: currentReservationValue && typeof currentReservationValue === "object" && Object.keys(currentReservationValue).length > 0
+			? [currentReservationValue]
+			: [];
+	const ownReservedIds = new Set(currentReservations.map(item => number(item.scootersInfoId)).filter((id): id is number => id != null));
+	const reservedIds = new Set(overallReservations.map(item => number(item.scootersInfoId)).filter((id): id is number => id != null && !ownReservedIds.has(id)));
 	const statusByImei = new Map(statuses.map(status => [text(status.imei), status]));
 
 	const candidates = infos.flatMap(info => {
@@ -81,8 +105,9 @@ export async function fetchOlooFleet(baseUrl: string, token: string): Promise<Fl
 		const updatedAt = typeof status?.updatedAt === "string" ? Date.parse(status.updatedAt) : Number.NaN;
 		const hasLocationError = !Number.isFinite(updatedAt) || Date.now() - updatedAt > 5 * 60_000;
 		const inUse = info.accountId != null;
+		const reserved = reservedIds.has(number(info.id) ?? -1);
 		const active = info.isActive !== false;
-		const availability: ScooterSummary["availability"] = !active || inUse || hasHardwareError || hasLocationError ? "unavailable" : batteryPercent < 35 ? "low_battery" : "available";
+		const availability: ScooterSummary["availability"] = !active || inUse || reserved || hasHardwareError || hasLocationError ? "unavailable" : batteryPercent < 35 ? "low_battery" : "available";
 		const distance = distanceKm(latitude, longitude);
 		return [
 			{
@@ -98,23 +123,29 @@ export async function fetchOlooFleet(baseUrl: string, token: string): Promise<Fl
 				} satisfies ScooterSummary,
 				distance,
 				hasHardwareError,
-				hasLocationError
+				hasLocationError,
+				reserved
 			}
 		];
 	});
 
-	const nearby = candidates.sort((a, b) => a.distance - b.distance).slice(0, 24);
+	const availabilityRank: Record<ScooterSummary["availability"], number> = { available: 0, low_battery: 1, unavailable: 2 };
+	const nearby = candidates
+		.sort((a, b) => a.distance - b.distance)
+		.slice(0, 24)
+		.sort((a, b) => availabilityRank[a.scooter.availability] - availabilityRank[b.scooter.availability] || a.distance - b.distance);
 	const scooters = nearby.map(item => item.scooter);
 	const lowBattery = scooters.filter(item => item.availability === "low_battery").length;
 	const hardware = nearby.filter(item => item.hasHardwareError).length;
 	const location = nearby.filter(item => item.hasLocationError).length;
+	const reserved = nearby.filter(item => item.reserved).length;
 	const availableCount = scooters.filter(item => item.availability === "available").length;
 
 	return {
 		totalCount: scooters.length,
 		availableCount,
 		unavailableCount: scooters.length - availableCount,
-		reasons: { lowBattery, hardware, location },
+		reasons: { lowBattery, hardware, location, reserved },
 		scooters
 	};
 }

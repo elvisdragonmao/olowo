@@ -1,19 +1,19 @@
-# oluwu product and architecture specification
+# olowo product and architecture specification
 
 ## Product promise
 
-oluwu is a mobile-first Web/PWA client that helps oloo riders answer three questions quickly:
+olowo is a mobile-first Web/PWA client that helps oloo riders answer three questions quickly:
 
 1. Which nearby scooter can I actually borrow?
 2. How much battery and range does it have, and where exactly is it?
 3. While riding, when should I return it and what must I do to finish safely?
 
-It keeps oloo's green identity but does not copy the current app's information architecture. The primary surface is a ranked scooter list with a compact live-map overview above it. Statistics explain the list and map; they are not a separate dashboard users must understand first.
+It keeps oloo's green identity but does not copy the current app's information architecture. The primary surface is a full-bleed live map of stations, with a panel floating over it: a draggable bottom sheet on phones and a left-hand panel on desktop. Statistics explain the map; they are not a separate dashboard users must understand first.
 
 ## Experience principles
 
 - Show numbers, not decorative status icons: `72%`, `1.2 km`, `更新 18 秒前`.
-- Separate official facts from oluwu inference. Every inferred unavailable reason carries a confidence level.
+- Separate official facts from olowo inference. Every inferred unavailable reason carries a confidence level.
 - Make one primary action obvious on each screen.
 - Keep warnings adjacent to the action they affect.
 - Keep authoritative timers on Fastify; browser timers are display-only.
@@ -37,12 +37,11 @@ Mobile navigation should expose Map, Ride, Activity and Account. Ride replaces i
 
 ### Nearby scooters
 
-- A short map overview shows exact scooter points without pushing the ranked list below the first viewport.
-- Scooter marker displays battery percentage; color encodes availability, not battery alone.
-- The list is the primary browsing surface. Each row shows vehicle label, walking time, battery percentage, estimated range and concise availability.
-- Selecting a row synchronizes the map and a sticky action bar; no address selector is shown.
-- A compact summary such as `9 台可借 · 附近共 24 台` opens reason statistics.
-- Filter controls: available only, battery floor, model, position freshness and e-fence layer.
+- The map fills the viewport and shows stations. Each station pin shows its borrowable count; color encodes whether anything is borrowable.
+- Opening a station (pin or list row) fans its scooters out around the pin, each showing battery percentage, and lists them with range and concise availability.
+- The panel lists stations nearest to the rider (or to the map centre before location is granted) with walking time and a dock composition bar; no address selector is shown.
+- A compact summary such as `212 台可借 · 81 個站點` sits at the top of the panel.
+- Controls stay minimal: station search (name or campus) and an "available only" toggle. No battery floor; battery is shown per scooter once a station is opened.
 - Cluster dense points without hiding the available/unavailable ratio.
 
 ### Unavailable summary
@@ -56,36 +55,35 @@ Mobile navigation should expose Map, Ride, Activity and Account. Ride replaces i
 
 - Elapsed time and estimated current charge dominate the screen.
 - Return-by target and next billing boundary are visible without scrolling.
-- A rider can choose a reminder, automatic return, or return-and-reborrow for a fixed ride duration. Destructive choices require an explicit confirmation and remain cancellable before execution.
+- A rider can choose automatic return or return-and-reborrow after 0:28, 1:28, 2:28 or a custom duration. Destructive choices require an explicit confirmation and remain cancellable before execution.
 - Power/lock controls appear only when the current ride and upstream permission allow them.
 - Return readiness checks current ride ownership and vehicle identity before the server sends a return command.
 
-### Photo-free return direction
+### Return and checkout
 
-- The rider stops and locks the scooter, then confirms return without opening a camera screen.
+- The rider stops and locks the scooter, then confirms return.
 - The server re-reads the active ride and requires the ride ID and scooter ID to match before returning.
-- The UI only shows completion after the upstream state confirms it; a timeout or rejection leaves the ride visible.
-- The August HAR proves that the old checkout accepted `firstImgId`. Until staging removes that field or provides a photo-free checkout contract, oluwu does not upload blank/stock files and does not label billing checkout complete.
-- This separation lets the CEO demo show the planned WeMo/GoShare-style interaction without pretending that the old checkout contract has already changed.
+- oloo still requires a return photo (`firstImgId`) for checkout. After return the PWA shows the final bill, asks for a genuine photo, lets the rider choose a card and oloo coin use, and pays. olowo never uploads blank or stock images.
+- An unpaid ride survives refreshes: the PWA keeps a 「待結帳」 shortcut until checkout succeeds.
 
 ## Feature decision table
 
-| Requested idea                            | Product decision                          | Reason                                                                                 |
-| ----------------------------------------- | ----------------------------------------- | -------------------------------------------------------------------------------------- |
-| exact battery percentage                  | build in MVP                              | directly available in scooter status                                                   |
-| exact scooter location                    | build in MVP with freshness/accuracy      | coordinates are available; stale/invalid GPS must be explicit                          |
-| unavailable-reason counts                 | build in MVP as explained inference       | supported by joined status and report evidence                                         |
-| timed reminder                            | implemented                               | server timer remains reliable when the PWA is backgrounded                             |
-| automatic return                          | implemented with confirmation and recheck | CEO authorized; job locks to one active ride and stops on ambiguity                    |
-| return and automatically reborrow at 1:29 | implemented as explicit opt-in            | confirms next billing segment, rechecks ride, returns first, and never retries failure |
-| photo-free return UI                      | implemented; checkout contract pending    | matches planned provider direction without forging an image                            |
-| scheduled reservation                     | implemented                               | create/cancel contracts recovered and server rechecks state at trigger                 |
-| email login                               | implemented and staging-verified          | exact six-digit OTP endpoints recovered and tested                                     |
+| Requested idea                            | Product decision                           | Reason                                                                                 |
+| ----------------------------------------- | ------------------------------------------ | -------------------------------------------------------------------------------------- |
+| exact battery percentage                  | build in MVP                               | directly available in scooter status                                                   |
+| exact scooter location                    | build in MVP with freshness/accuracy       | coordinates are available; stale/invalid GPS must be explicit                          |
+| unavailable-reason counts                 | build in MVP as explained inference        | supported by joined status and report evidence                                         |
+| automatic return                          | implemented with confirmation and recheck  | CEO authorized; job locks to one active ride and stops on ambiguity                    |
+| return and automatically reborrow at 1:29 | implemented as explicit opt-in             | confirms next billing segment, rechecks ride, returns first, and never retries failure |
+| return photo and card checkout            | implemented; not exercised with real money | contract recovered from the capture; genuine photo only                                |
+| reservation                               | implemented: immediate 5-minute hold only  | countdown from oloo's expiry; olowo shows the rider's recent reservation/cancel count  |
+| scheduled reservation                     | removed                                    | not needed                                                                             |
+| email login                               | implemented and staging-verified           | exact six-digit OTP endpoints recovered and tested                                     |
 
 ## Recommended monorepo
 
 ```text
-oluwu/
+olowo/
 ├── apps/
 │   ├── web/                  # React, Vite, PWA, TanStack Query, Zustand
 │   └── api/                  # Fastify, PostgreSQL, scheduler and upstream proxy
@@ -140,9 +138,9 @@ Recommended public endpoints:
 | Method         | Route                          | Purpose                                                      |
 | -------------- | ------------------------------ | ------------------------------------------------------------ |
 | POST           | `/v1/auth/email/start`         | begin captured provider email flow                           |
-| POST           | `/v1/auth/email/verify`        | verify and create oluwu session                              |
+| POST           | `/v1/auth/email/verify`        | verify and create olowo session                              |
 | POST           | `/v1/auth/logout`              | revoke local session and provider credential where supported |
-| GET            | `/v1/map/scooters`             | region-bounded sanitized fleet DTOs                          |
+| GET            | `/v1/map/stations`             | stations with their sanitized scooter DTOs                   |
 | GET            | `/v1/map/availability-summary` | reason counts for bounds/station                             |
 | GET            | `/v1/rides/current`            | canonical current ride and completion state                  |
 | POST           | `/v1/rides`                    | borrow with idempotency key                                  |
@@ -150,7 +148,6 @@ Recommended public endpoints:
 | GET/PUT/DELETE | `/v1/rides/:id/automation`     | inspect, configure or cancel a ride timer                    |
 | GET            | `/v1/reservations/current`     | normalized current reservation                               |
 | POST/DELETE    | `/v1/reservations[/:id]`       | create or cancel a reservation                               |
-| GET/PUT/DELETE | `/v1/reservations/scheduled`   | inspect, configure or cancel a scheduled reservation         |
 
 ## PostgreSQL model
 
@@ -207,7 +204,7 @@ stateDiagram-v2
 
 ## Scheduling model
 
-A PWA timer is suitable for visible countdowns, not authoritative state changes. oluwu uses this order:
+A PWA timer is suitable for visible countdowns, not authoritative state changes. olowo uses this order:
 
 1. browser timer while visible;
 2. service-worker notification where supported;

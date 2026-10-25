@@ -10,7 +10,7 @@ Realtime endpoint: `/wss/`
 
 The captured client and the October 25, 2026 staging verification sent the JWT as the raw `Authorization` header value and duplicated it in the `access_token` query parameter on authenticated REST calls. `Bearer <token>` and header-only requests both returned `401` during verification. The WebSocket used a `token` query parameter. The client also used `ETag`/`If-None-Match`; many configuration and account endpoints returned `304 Not Modified`.
 
-oluwu does not expose provider tokens to browser JavaScript or browser URLs. Browser calls terminate at Fastify using an opaque HttpOnly session cookie. Fastify performs the upstream-only compatibility duplication, strips sensitive response fields, applies timeouts, and maps upstream errors to a stable oluwu error envelope.
+olowo does not expose provider tokens to browser JavaScript or browser URLs. Browser calls terminate at Fastify using an opaque HttpOnly session cookie. Fastify performs the upstream-only compatibility duplication, strips sensitive response fields, applies timeouts, and maps upstream errors to a stable olowo error envelope.
 
 ### Email OTP login (verified October 25, 2026)
 
@@ -19,7 +19,7 @@ oluwu does not expose provider tokens to browser JavaScript or browser URLs. Bro
 | POST   | `/accounts/require-email-verification-for-login-with-numeric-captcha` | `{ email }`          | sends a six-digit code                       |
 | POST   | `/accounts/login-by-email-verification-with-numeric-captcha`          | `{ email, captcha }` | user object and provider access-token object |
 
-The JWT is `accessToken.id`; `accessToken` itself is an object. Roles are returned as role objects and oluwu normalizes their `name` fields before returning a public session.
+The JWT is `accessToken.id`; `accessToken` itself is an object. Roles are returned as role objects and olowo normalizes their `name` fields before returning a public session.
 
 ## Complete observed endpoint inventory
 
@@ -118,7 +118,7 @@ Create and cancel paths and payloads were recovered from the Hermes v96 bundle a
 | Method | Path                                        | Request fields observed             | Notes                                                  |
 | ------ | ------------------------------------------- | ----------------------------------- | ------------------------------------------------------ |
 | POST   | `/user-action/record-guest-action`          | `type`, `event`, `ts`, `deviceImei` | analytics; captured payloads can be sensitive          |
-| POST   | `/user-action/record-user-action-with-auth` | `type`, `event`, `payload`, `ts`    | analytics; never forward rich route objects from oluwu |
+| POST   | `/user-action/record-user-action-with-auth` | `type`, `event`, `payload`, `ts`    | analytics; never forward rich route objects from olowo |
 | POST   | `/user-status-log/self/location`            | `latitude`, `longitude`, `status`   | location/status update                                 |
 | POST   | `/user-status-log/self/tracking`            | `latitude`, `longitude`, `ts`       | active tracking, approximately 1 Hz in capture         |
 
@@ -213,7 +213,7 @@ export interface DurationParts {
 }
 ```
 
-## oluwu public DTO
+## olowo public DTO
 
 The browser should receive a reduced, joined record instead of raw upstream objects:
 
@@ -242,7 +242,7 @@ Never forward IMEI, BLE address/key material, ICCID, device mobile number, contr
 
 ## Error and mutation requirements
 
-oluwu should normalize upstream errors as:
+olowo should normalize upstream errors as:
 
 ```json
 {

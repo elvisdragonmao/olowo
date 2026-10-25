@@ -1,27 +1,44 @@
-# oluwu
+# olowo
 
 一個把電量、定位、可借原因與騎乘成本說清楚的第三方 oloo Web/PWA client。
 
-目前包含可安裝的清單優先 PWA、Fastify 安全邊界與已驗證的 staging 整合：
+目前包含地圖優先、手機與桌機皆可用的 RWD PWA、Fastify 安全邊界與已驗證的 staging 整合：
 
 - [API 文件](docs/api/observed-api.md)
-- [oluwu 公開 API](docs/api/oluwu-api.md)
+- [olowo 公開 API](docs/api/olowo-api.md)
 - [APK、HAR、舊報告研究](docs/research/oloo-client-research.md)
 - [產品、流程與架構規格](docs/product/product-and-architecture.md)
-- [視覺實作 QA](design-qa.md)
 
-本機啟動：
+## 開發
 
 ```sh
 pnpm install
+cp .env.example .env                           # 填 SESSION_ENCRYPTION_KEY（openssl rand -hex 32）與 Mapbox token
+cp apps/api/.env.example apps/api/.env         # 同一把 SESSION_ENCRYPTION_KEY
+cp apps/web/.env.example apps/web/.env.local   # Mapbox public token
+docker compose up -d db                        # 本機 PostgreSQL，session 重啟 API 也不會掉
 pnpm dev
 ```
 
-Web 預設為 `http://127.0.0.1:5173`，API 為 `http://127.0.0.1:8787`。前端從 Fastify 的 `/v1/map/scooters` 取得已過濾的車輛資料；Email OTP、費率、目前騎乘、借還車、立即／定時預約與騎乘計時排程皆已接上 staging。所有上游 token 只存在 Fastify 記憶體或 PostgreSQL 的 AES-256-GCM 密文中，PWA 只持有 HttpOnly 的不透明 session cookie。
+Web 為 `http://127.0.0.1:5173`，API 為 `http://127.0.0.1:8787`。瀏覽器一律呼叫同源的 `/v1/*`（開發時由 Vite proxy，部署時由 Caddy 反向代理到 Fastify），讓 session cookie 維持 first-party。
 
-PostgreSQL migrations 位於 `apps/api/sql/`。依序套用 `001_initial.sql`、`002_persist_provider_sessions.sql`、`003_persist_scheduled_actions.sql`，複製 `apps/api/.env.example` 為本機 `.env`，並產生一組 32-byte hex `SESSION_ENCRYPTION_KEY`；不要提交實際帳密、key 或 oloo token。未設定資料庫時會使用適合本機開發的記憶體 session 與排程。
+## 部署
 
-登入後，fleet adapter 會從 staging 取得車輛資訊與狀態、快取 25 秒、只保留附近 24 台的公開欄位，再提供給前端；未登入且沒有 `OLOO_ACCESS_TOKEN` 時使用 demo fleet。由於 staging 本身要求 token 同時出現在 raw `Authorization` header 與 `access_token` query，Fastify 只在 server-to-server 請求中做此相容處理，永不把 token 送到瀏覽器。
+同一份 `compose.yaml`：
+
+```sh
+docker compose up -d --build   # db + api + web（Caddy），預設 http://localhost:8080
+```
+
+要用自己的網域時，在 `.env` 設 `SITE_ADDRESS=olowo.example.com`、`PUBLIC_ORIGIN=https://olowo.example.com`，並開放 80／443（`HTTP_PORT`、`HTTPS_PORT`），Caddy 會自動申請 HTTPS 憑證。
+
+資料庫 schema 在 `apps/api/sql/schema.sql`，API 每次啟動都會以 `CREATE … IF NOT EXISTS` 套用；目前還沒部署過，所以沒有 migration。未設定 `DATABASE_URL` 時 API 改用記憶體（重啟即登出），只適合測試。
+
+## 功能
+
+前端從 `/v1/map/stations` 取得以站點分組的車況：地圖只畫站點與電子圍籬，點進車輛才標出它的定位；Email OTP、費率、目前騎乘與預估車資、借還車、還車照片與刷卡結帳、預約（保留 5 分鐘並倒數）與騎乘計時（自動歸還／歸還後重借）皆已接上 staging；結帳流程依 HAR 契約實作，尚未以真實付款驗證。oloo token 只存在 Fastify 記憶體或 PostgreSQL 的 AES-256-GCM 密文中，PWA 只持有 HttpOnly 的不透明 session cookie。provider token 用到一半壽命時，API 會透過 `keep-login` 自動延長；oloo 回 401 時 API 會清掉本機 session，前端回到登入畫面。
+
+登入後，fleet adapter 會從 staging 取得車輛資訊、狀態、站點與全站預約，以全域快取共用 25 秒（同時間的多個請求只打一次上游，上游失敗時 5 分鐘內回傳上一份快照），只保留公開欄位並依站點分組後提供給前端；站點資料直接來自 oloo，所以未登入時 `/v1/map/stations` 回 `401 AUTH_REQUIRED`，前端先顯示登入；營運者若設定 `OLOO_ACCESS_TOKEN`，未登入的訪客也能看到站點（只讀）。由於 staging 本身要求 token 同時出現在 raw `Authorization` header 與 `access_token` query，Fastify 只在 server-to-server 請求中做此相容處理，永不把 token 送到瀏覽器。
 
 常用驗證：
 
@@ -30,7 +47,7 @@ pnpm run build
 pnpm test
 ```
 
-瀏覽器測試會攔截 API mutation，不會借到、歸還或預約真車。真實 staging mutation 必須使用明確指定的測試車輛。
+瀏覽器測試（手機與桌機兩種 viewport）會攔截 olowo API 與 Mapbox，不會借到、歸還或預約真車。真實 staging mutation 必須使用明確指定的測試車輛。
 
 重新產生已遮蔽敏感值的 HAR inventory：
 

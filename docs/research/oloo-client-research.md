@@ -1,7 +1,7 @@
 # oloo third-party client research
 
 Date: 2026-10-25  
-Project: oluwu  
+Project: olowo  
 Status: evidence-backed discovery, not a production security assessment
 
 ## Executive summary
@@ -54,7 +54,7 @@ The oloo portion of the HAR spans 2026-08-02 10:14:46Z to 10:20:16Z.
 
 The two fleet endpoints account for roughly 17.1 MiB of the 20 MiB captured response traffic. Repeatedly decoding, joining, sorting, and rendering those full arrays is a plausible contributor to memory pressure and jank, but the capture alone does not prove the cause of the reported crashes.
 
-An oluwu backend should poll once per region, normalize records, publish small deltas, and share that cache among clients. The browser should not download raw fleet snapshots every 30 seconds.
+An olowo backend should poll once per region, normalize records, publish small deltas, and share that cache among clients. The browser should not download raw fleet snapshots every 30 seconds.
 
 ## Fleet snapshot
 
@@ -69,9 +69,9 @@ The final matched snapshot in the HAR contained:
 
 The status snapshot ranged from 0% to 100% power; 303 status records were below 35%. It also contained 392 records with missing or zero GPS coordinates and 920 non-empty `errorMsg` values. `Connection: close` appeared as a transport message and must not be counted as a vehicle fault. The next most common strings in this snapshot were `illegalMovement`, `illegalDisassembly`, and `throttleAbnormal`. These counts are descriptive only because error signals overlap and the status population is larger than the scooter-information population.
 
-## Availability model for oluwu
+## Availability model for olowo
 
-The official server's exact final eligibility predicate was not captured. oluwu should therefore expose an explainable diagnostic model and avoid labeling it as an official rejection reason.
+The official server's exact final eligibility predicate was not captured. olowo should therefore expose an explainable diagnostic model and avoid labeling it as an official rejection reason.
 
 For each scooter, join `ScooterInfo` and the latest `ScooterStatus` on normalized IMEI and retain every applicable reason. Recommended reason groups are:
 
@@ -115,21 +115,21 @@ The return-photo upload and final checkout are separate operations. The observed
 
 The HAR records `access_token` on nearly every API query string, a JWT path segment on an authentication route, and a `token` query parameter for WebSocket connections. One navigation analytics payload also contained a nested checkout object whose extra options included the bearer token.
 
-URL credentials can be retained by browser history, reverse proxies, CDN logs, analytics, crash reports, and screenshots. oluwu never repeats this pattern in browser traffic. October 25 staging checks found that the provider rejects header-only and `Bearer` requests and requires the raw JWT in both the `Authorization` header and `access_token` query. Fastify therefore performs that compatibility step only on its server-to-server connection and issues the browser an opaque, Secure, HttpOnly, SameSite session cookie.
+URL credentials can be retained by browser history, reverse proxies, CDN logs, analytics, crash reports, and screenshots. olowo never repeats this pattern in browser traffic. October 25 staging checks found that the provider rejects header-only and `Bearer` requests and requires the raw JWT in both the `Authorization` header and `access_token` query. Fastify therefore performs that compatibility step only on its server-to-server connection and issues the browser an opaque, Secure, HttpOnly, SameSite session cookie.
 
 The token pasted into the project conversation should be treated as exposed and rotated, even though it is a staging token. It must not be committed, copied into `.env.example`, embedded in the PWA, or used in screenshots.
 
 ### High: fleet responses include device secrets not needed by the UI
 
-The scooter-information response includes operational identifiers such as BLE address/key material, SIM/ICCID and mobile-number fields, controller serials, and firmware versions for the fleet. oluwu must explicitly allow-list its public DTO and discard these fields before caching or logging. No BLE-control functionality will be built from this data.
+The scooter-information response includes operational identifiers such as BLE address/key material, SIM/ICCID and mobile-number fields, controller serials, and firmware versions for the fleet. olowo must explicitly allow-list its public DTO and discard these fields before caching or logging. No BLE-control functionality will be built from this data.
 
 ### High: action analytics contain excessive sensitive context
 
-Observed action events include full navigation parameters. In the return-photo flow this included local file paths, detailed photo EXIF, device make/model, timestamps, and coordinates. Other events contained account, ride, scooter, billing, and token-bearing objects. oluwu analytics should accept event names and minimal scalar context only; request bodies must pass a recursive redaction filter before logs or error reporting.
+Observed action events include full navigation parameters. In the return-photo flow this included local file paths, detailed photo EXIF, device make/model, timestamps, and coordinates. Other events contained account, ride, scooter, billing, and token-bearing objects. olowo analytics should accept event names and minimal scalar context only; request bodies must pass a recursive redaction filter before logs or error reporting.
 
 ### Medium: polling and tracking are unnecessarily expensive
 
-The official client downloaded full fleet datasets every roughly 30 seconds and posted active location approximately once per second. oluwu should use region-bounded cache refresh, server-side joins, change detection, adaptive foreground intervals, WebSocket/SSE deltas, and no background location collection unless a ride is active and the user has granted it.
+The official client downloaded full fleet datasets every roughly 30 seconds and posted active location approximately once per second. olowo should use region-bounded cache refresh, server-side joins, change detection, adaptive foreground intervals, WebSocket/SSE deltas, and no background location collection unless a ride is active and the user has granted it.
 
 ### Safety boundary for mutations
 
@@ -148,7 +148,7 @@ The first release should emphasize:
 7. stable email-session handling through the backend;
 8. clear e-fence, slow-zone, no-throttle, and return-zone layers.
 
-Automatic return/reborrow is not suitable as a PWA-only timer: browsers suspend background work, and the operation changes billing and vehicle state. With explicit CEO authorization, oluwu implements it as a server-side, per-ride opt-in: the UI states the next billing consequence, requires confirmation, provides cancellation, rechecks the current ride, returns first, and stops rather than retrying an ambiguous failure. Production deployment still needs durable scheduler recovery and a known-vehicle mutation drill.
+Automatic return/reborrow is not suitable as a PWA-only timer: browsers suspend background work, and the operation changes billing and vehicle state. With explicit CEO authorization, olowo implements it as a server-side, per-ride opt-in: the UI states the next billing consequence, requires confirmation, provides cancellation, rechecks the current ride, returns first, and stops rather than retrying an ambiguous failure. Production deployment still needs durable scheduler recovery and a known-vehicle mutation drill.
 
 ## Open evidence gaps
 

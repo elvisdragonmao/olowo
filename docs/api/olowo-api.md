@@ -180,14 +180,10 @@ Requires an `Idempotency-Key` header of at least eight characters.
 Requires an `Idempotency-Key` header.
 
 ```json
-{ "scooterId": 1512 }
+{ "scooterId": 1512, "latitude": 24.7876, "longitude": 120.9972 }
 ```
 
-Before sending a return command, the server reads the current provider rental and requires both ride ID and scooter ID to match. A mismatch returns `409` without sending the mutation.
-
-The observed provider lifecycle still performs billing checkout after return. The current olowo UI is designed for the operator's planned photo-free flow, but it does not forge or upload a placeholder image and does not claim checkout completion while staging still requires `firstImgId`.
-
-## Ride automation
+The coordinates are optional: the PWA sends the phone's location when the rider granted it, otherwise the API uses the scooter's last telemetry fix. Before sending a return command, the server reads the current provider rental and requires both ride ID and scooter ID to match; a mismatch returns `409` without sending the mutation. Like the official client, it then calls oloo `bill?latitude&longitude` first, which fixes the end time and matches the return station, and only then sends `return` (which carries just the IMEI). The response is `{ success, rideId, endedAt, returnStation, locationSource: "rider" | "scooter" | "none" }`.
 
 ### `GET /v1/rides/:rideId/automation`
 
@@ -208,7 +204,7 @@ Returns `{ "automation": null }` or:
 }
 ```
 
-States are `scheduled`, `running`, `due`, `completed`, `failed`, and `cancelled`. A notification ends in `due`; destructive actions end in `completed` or `failed` and are not retried automatically.
+States are `scheduled`, `running`, `due`, `completed`, `failed`, and `cancelled`. A notification ends in `due`; destructive actions end in `completed` or `failed` and are not retried automatically. The timer is measured from the provider-confirmed ride start ("after 0:28 of riding"), not from when it was set. `return_and_reborrow` returns, uploads the placeholder photo, pays with the rider's first valid card (oloo coin first), and only then rents the same scooter again; any failure stops the chain.
 
 ### `PUT /v1/rides/:rideId/automation`
 
@@ -258,9 +254,9 @@ Current fare for the active ride from oloo `estimate-bill`: `{ estimate: { cost,
 
 `{ ride: { id, scooterId, label, startedAt, endedAt, cost } | null }`: the latest ride when it has ended and `isPaid` is not true. The PWA shows a 「待結帳」 shortcut while this is non-null.
 
-### `GET /v1/rides/:rideId/bill?latitude=&longitude=`
+### `GET /v1/rides/:rideId/bill`
 
-Final bill for the unpaid ride, priced at the return location. Without coordinates the scooter's last telemetry position is used; `409 LOCATION_REQUIRED` when neither exists. A bill for a different ride id is rejected with `409`.
+Final bill for the unpaid ride, priced with oloo `estimate-bill` at the moment of return (`lastRentalEndedAtForCalculationMillis`), exactly as the official client does after returning. It therefore stops growing when the rider presses return, not when they finish the photo. Includes `endedAt` and `returnStation`.
 
 ### `GET /v1/payment/cards`
 
@@ -268,7 +264,7 @@ Final bill for the unpaid ride, priced at the return location. Without coordinat
 
 ### `POST /v1/rides/:rideId/photo`
 
-Raw `image/jpeg`, `image/png` or `image/webp` body up to 8 MB (the PWA downsizes to 1600 px JPEG first). Forwarded to `/account-rental-images/upload/?type=SCOOTER&when=RETURN` as multipart; returns `{ imageId }`. The file name uses the ride id, not the IMEI. olowo never generates or substitutes a photo.
+Raw `image/jpeg`, `image/png` or `image/webp` body up to 8 MB (the PWA downsizes to 1600 px JPEG first), or `?placeholder=1` with no body to upload a built-in 1×1 white PNG. Forwarded to `/account-rental-images/upload/?type=SCOOTER&when=RETURN` as multipart; returns `{ imageId }`. The file name uses the ride id, not the IMEI.
 
 ### `POST /v1/rides/:rideId/checkout`
 

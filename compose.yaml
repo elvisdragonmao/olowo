@@ -1,6 +1,8 @@
 # One file for both environments.
 #   dev:  docker compose up -d db        (then `pnpm dev`; the API connects to 127.0.0.1:5432)
 #   prod: docker compose up -d --build   (db + api + web on http://localhost:8080, or SITE_ADDRESS for HTTPS)
+#   Dokploy: deploy this file as a Compose app and add the domain on the `web` service, port 80; Traefik in
+#   front handles the public ports, so the host ports below stay bound to 127.0.0.1.
 # Values come from ./.env (see .env.example).
 name: olowo
 
@@ -15,6 +17,8 @@ services:
       - db-data:/var/lib/postgresql/data
     ports:
       - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    networks:
+      - default
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U olowo -d olowo"]
       interval: 5s
@@ -35,6 +39,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    networks:
+      - default
     restart: unless-stopped
 
   web:
@@ -45,14 +51,21 @@ services:
         VITE_MAPBOX_ACCESS_TOKEN: ${VITE_MAPBOX_ACCESS_TOKEN:-}
     environment:
       SITE_ADDRESS: ${SITE_ADDRESS:-:80}
+    # Set HTTP_BIND=0.0.0.0 with HTTP_PORT=80 / HTTPS_PORT=443 when Caddy itself faces the internet.
     ports:
-      - "${HTTP_PORT:-8080}:80"
-      - "${HTTPS_PORT:-8443}:443"
+      - "${HTTP_BIND:-127.0.0.1}:${HTTP_PORT:-8080}:80"
+      - "${HTTP_BIND:-127.0.0.1}:${HTTPS_PORT:-8443}:443"
+    # Named explicitly so a platform that adds its own proxy network (Dokploy, Coolify) keeps this one too.
+    networks:
+      - default
     volumes:
       - caddy-data:/data
     depends_on:
       - api
     restart: unless-stopped
+
+networks:
+  default:
 
 volumes:
   db-data:

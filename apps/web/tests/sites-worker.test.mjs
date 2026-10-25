@@ -61,6 +61,26 @@ test("does not turn missing API or write requests into the app shell", async () 
   }
 });
 
+test("proxies API requests to the configured origin and keeps the cookie header", async () => {
+  const originalFetch = globalThis.fetch;
+  let forwarded;
+  globalThis.fetch = async (request) => {
+    forwarded = request;
+    return new Response("{}", { status: 200 });
+  };
+  try {
+    const response = await worker.fetch(
+      new Request("https://olowo.test/v1/map/stations?x=1", { headers: { cookie: "olowo_session=abc" } }),
+      { API_ORIGIN: "https://api.olowo.test", ASSETS: { fetch: async () => assert.fail("assets must not serve API routes") } },
+    );
+    assert.equal(response.status, 200);
+    assert.equal(forwarded.url, "https://api.olowo.test/v1/map/stations?x=1");
+    assert.equal(forwarded.headers.get("cookie"), "olowo_session=abc");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("emits the files required by Sites packaging", async () => {
   await access(new URL("../dist/client/index.html", import.meta.url));
   await access(new URL("../dist/server/index.js", import.meta.url));

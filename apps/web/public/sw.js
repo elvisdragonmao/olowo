@@ -1,5 +1,5 @@
-const CACHE_NAME = "oluwu-shell-v1";
-const APP_SHELL = ["/", "/manifest.webmanifest", "/assets/brand/oloo-wordmark.png", "/assets/brand/oloo-scooter-c5.png", "/assets/brand/oluwu-icon-192.png", "/assets/brand/oluwu-icon-512.png"];
+const CACHE_NAME = "olowo-shell-v2";
+const APP_SHELL = ["/", "/manifest.webmanifest", "/assets/brand/oloo-wordmark.png", "/assets/brand/oloo-scooter-c5.png", "/assets/brand/olowo-icon-192.png", "/assets/brand/olowo-icon-512.png"];
 
 self.addEventListener("install", event => {
 	event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(APP_SHELL)));

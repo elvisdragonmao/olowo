@@ -6,7 +6,8 @@
 	"scripts": {
 		"build": "tsc -p tsconfig.json",
 		"dev": "tsx watch src/server.ts",
-		"start": "node dist/server.js"
+		"start": "node dist/server.js",
+		"test": "tsx --test tests/**/*.test.ts"
 	},
 	"dependencies": {
 		"@fastify/cookie": "^11.1.3",

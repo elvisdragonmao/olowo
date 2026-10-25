@@ -1,13 +1,14 @@
 import { CheckCircle, EnvelopeSimple, SignOut } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
-import { KeyboardInput } from "../../mobile";
+import { KeyboardInput, useKeyboard } from "../../mobile";
 import { apiRequest } from "../../shared/api";
 
 type Session = { authenticated: false } | { authenticated: true; email: string; userId: number; roles: string[]; expiresAt: string };
 
 export function AuthPanel() {
 	const queryClient = useQueryClient();
+	const keyboard = useKeyboard();
 	const [email, setEmail] = useState("");
 	const [captcha, setCaptcha] = useState("");
 	const [codeSent, setCodeSent] = useState(false);
@@ -21,7 +22,10 @@ export function AuthPanel() {
 	});
 	const verify = useMutation({
 		mutationFn: () => apiRequest<Session>("/v1/auth/email/verify", { method: "POST", body: JSON.stringify({ email, captcha }) }),
-		onSuccess: refreshAuthenticatedData
+		onSuccess: async () => {
+			keyboard.hide();
+			await refreshAuthenticatedData();
+		}
 	});
 	const logout = useMutation({
 		mutationFn: () => apiRequest<{ success: true }>("/v1/auth/logout", { method: "POST" }),

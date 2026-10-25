@@ -12,7 +12,8 @@
 		"format:check": "prettier --check .",
 		"preinstall": "node scripts/enforce-pnpm.mjs",
 		"prepare": "sh -c 'if command -v git >/dev/null 2>&1 && git rev-parse --is-inside-work-tree >/dev/null 2>&1; then git config core.hooksPath .githooks; fi'",
-		"research:har": "node scripts/research/summarize-har.mjs"
+		"research:har": "node scripts/research/summarize-har.mjs",
+		"test": "pnpm --filter @oluwu/api test && pnpm --filter @oluwu/web test:sites && pnpm --filter @oluwu/web test:runtime"
 	},
 	"devDependencies": {
 		"prettier": "^3.9.10",

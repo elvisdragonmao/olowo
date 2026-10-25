@@ -6,6 +6,9 @@ import type { LiveMapHandle } from "./features/map/LiveMap";
 import { ScooterRow } from "./features/map/ScooterRow";
 import { useFleetQuery } from "./features/map/useFleetQuery";
 import { useMapStore } from "./features/map/useMapStore";
+import { RidePanel } from "./features/ride/RidePanel";
+import { ScooterActionPanel } from "./features/ride/ScooterActionPanel";
+import { useCurrentRideQuery } from "./features/ride/useCurrentRideQuery";
 import { BottomSheet, MobileScroll } from "./mobile";
 
 const LiveMap = lazy(() => import("./features/map/LiveMap").then(module => ({ default: module.LiveMap })));
@@ -19,12 +22,13 @@ const queryClient = new QueryClient({
 	}
 });
 
-type Sheet = "filters" | "reasons" | "profile" | null;
+type Sheet = "filters" | "reasons" | "profile" | "scooter" | "ride" | null;
 
 function OluwuPrototype() {
 	const mapRef = useRef<LiveMapHandle>(null);
 	const [sheet, setSheet] = useState<Sheet>(null);
 	const { data } = useFleetQuery();
+	const currentRide = useCurrentRideQuery().data?.activeRide ?? null;
 	const selectedId = useMapStore(state => state.selectedId);
 	const setSelectedId = useMapStore(state => state.setSelectedId);
 	const availableOnly = useMapStore(state => state.availableOnly);
@@ -116,16 +120,14 @@ function OluwuPrototype() {
 				</main>
 			</MobileScroll>
 
-			<footer className="selected-scooter-bar" aria-label="目前選擇">
+			<footer className="selected-scooter-bar" aria-label={currentRide ? "目前騎乘" : "目前選擇"}>
 				<img src="/assets/brand/oloo-scooter-c5.png" alt="" />
 				<div className="selected-scooter-summary">
-					<strong>{selected.id}</strong>
-					<span>
-						{selected.batteryPercent}% · 約 {selected.rangeKm} 公里
-					</span>
+					<strong>{currentRide?.label ?? selected.id}</strong>
+					<span>{currentRide ? "騎乘中 · 點此管理" : `${selected.batteryPercent}% · 約 ${selected.rangeKm} 公里`}</span>
 				</div>
-				<button className="btn selected-scooter-action" type="button" onClick={() => focusScooter(selected.id)}>
-					查看位置
+				<button className="btn selected-scooter-action" type="button" onClick={() => setSheet(currentRide ? "ride" : "scooter")}>
+					{currentRide ? "管理騎乘" : "借用資訊"}
 				</button>
 			</footer>
 
@@ -174,6 +176,14 @@ function OluwuPrototype() {
 
 			<BottomSheet open={sheet === "profile"} onOpenChange={open => setSheet(open ? "profile" : null)} title="帳號" description="登入後才能借車與查看騎乘紀錄" snap={0.34}>
 				<AuthPanel />
+			</BottomSheet>
+
+			<BottomSheet open={sheet === "scooter"} onOpenChange={open => setSheet(open ? "scooter" : null)} title="借用資訊" description="費率與操作都以送出當下的 staging 狀態為準" snap={0.62}>
+				<ScooterActionPanel scooter={selected} onNeedLogin={() => setSheet("profile")} />
+			</BottomSheet>
+
+			<BottomSheet open={sheet === "ride"} onOpenChange={open => setSheet(open ? "ride" : null)} title="目前騎乘" description="計費與歸還狀態來自 oloo staging" snap={0.62}>
+				{currentRide ? <RidePanel ride={currentRide} /> : <p className="no-active-ride">目前沒有進行中的騎乘。</p>}
 			</BottomSheet>
 		</div>
 	);

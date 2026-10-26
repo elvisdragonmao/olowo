@@ -23,11 +23,13 @@ olowo is a real, responsive oloo client for phones and desktops. It is not a pho
 - After return the rider goes straight to checkout with the blank photo already attached (「還車照片（可選）」); a real photo can replace it.
 - The account view links to 騎乘紀錄 (`?view=history`), 訂閱方案 (`?view=plans`) and 優惠券 (`?view=coupons`), and ends with the credits (毛哥EM, GitHub link).
 - Buying a plan or a top-up always shows oloo's estimate (amount, start and end) before 「付款」; that step is the price, not a confirmation dialog. Only plans some region offers are sold; hidden campaign or staff plans are not.
-- README screenshots come from `pnpm screenshots` (`tests/screenshots.spec.ts`, mocked API, real Mapbox tiles).
+- The README shows `public/assets/brand/og.webp` (also the Open Graph image). `pnpm screenshots` (`tests/screenshots.spec.ts`, mocked API, real Mapbox tiles) renders fresh screenshots into `docs/screenshots/` when needed.
+- SEO lives in `index.html` (title 「olowo - 好用快速的 oloo 客戶端」, Open Graph, Twitter card, JSON-LD); `vite.config.ts` fills `%SITE_ORIGIN%` from `VITE_PUBLIC_ORIGIN` (compose passes `PUBLIC_ORIGIN`) and emits `robots.txt` and `sitemap.xml`.
+- The avatar is the rider's Gravatar (SHA-256 of the email), falling back to the initial.
 - Icons are the olowo wordmark (`public/assets/brand`); do not ship oloo's logo or artwork.
 - Phones (< 920 px): a draggable bottom sheet with `peek`, `half` and `full` snaps. Detail views open at `half` so the map stays visible. Desktop: a floating left panel over a full-bleed map.
 - Signed-out riders see sign-in first: station data comes from oloo and needs their credential. Do not add demo or placeholder stations.
-- Every view is addressable by URL (`?station=`, `?scooter=`, `?view=ride|checkout|scan|account|history|plans`) and the browser back button walks back through views.
+- Every view is addressable by URL (`?station=`, `?scooter=`, `?view=ride|checkout|scan|account|history|plans|coupons`) and the browser back button walks back through views.
 - Keep text compact (body 14 px, metadata 12–13 px). Large type is reserved for a single hero number per view (available count, battery, ride clock).
 - Label an available scooter `可借`; do not use claims such as `真的借得到`. Unavailable reasons are olowo inferences and must say so.
 - Do not add an address selector.

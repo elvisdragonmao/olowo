@@ -1,23 +1,22 @@
 # olowo
 
-一個把電量、定位、可借原因與騎乘成本說清楚的第三方 oloo Web/PWA client。由 毛哥EM 製作，不是 oloo 官方 App。覺得好用的話，在 GitHub 給顆 ⭐。
+一個更快、更好用、甚至讓你免費騎，把電量、定位、錯誤說清楚的第三方 oloo Web/PWA client。
 
-![桌機：地圖上的站點、電子圍籬與校區車況](docs/screenshots/desktop-map.png)
+![olowo 使用截圖](apps/web/public/assets/brand/og.webp)
 
-<p>
-  <img src="docs/screenshots/phone-station.png" width="240" alt="手機：站點內每台車的電量與定位">
-  <img src="docs/screenshots/phone-ride.png" width="240" alt="手機：騎乘中，騎滿 58 秒自動歸還">
-  <img src="docs/screenshots/phone-plans.png" width="240" alt="手機：訂閱方案、加值時數與續約">
-</p>
+線上版：<https://oluwu.emtech.cc>（用 oloo 帳號的 Email 登入）
 
-截圖用假資料與真實 Mapbox 底圖產生：`pnpm --filter @olowo/web screenshots`（需要 `apps/web/.env.local` 的 Mapbox token）。
+## 功能
 
-目前包含地圖優先、手機與桌機皆可用的 RWD PWA、Fastify 安全邊界與已驗證的 staging 整合：
-
-- [API 文件](docs/api/observed-api.md)
-- [olowo 公開 API](docs/api/olowo-api.md)
-- [APK、HAR、舊報告研究](docs/research/oloo-client-research.md)
-- [產品、流程與架構規格](docs/product/product-and-architecture.md)
+- **站點地圖**：每站標出「可借 / 停放」台數（例如 `1/5`），畫出電子圍籬，非營運區變暗；校區總覽直接看可借、沒電、故障各幾台。
+- **具體電量**：點進站點看每台車的電量 %、預估續航、車型，以及為什麼借不到（沒電、故障、被預約）；點一台車會標出它的 GPS 位置。
+- **借車**：立即借用、預約 5 分鐘（倒數計時，顯示這一小時還能預約幾次），也可以掃 QR Code 或輸入車號。
+- **定時**：騎滿指定時間就自動歸還，或歸還後自動以空白照片結帳再重借同一台；預設 30 秒、58 秒、4:58，也能自訂，騎乘中隨時改。由伺服器執行，關掉網頁也會跑。
+- **還車與結帳**：按下歸還就停止計費，直接跳到結帳，空白照片已自動附上，一鍵付款。
+- **騎乘紀錄**：每趟的費用、騎乘與臨停分鐘、發動與熄火秒數、起訖站點，以及最近 30 天統計。
+- **各種方案**：看校區可訂閱的方案與能否購買，付款前先試算，可購買、加值時數、取消自動續約或更改下期方案；也列出其他校區、活動限定與已下架的方案，方便比較。
+- **優惠券**：列出可用與已使用的優惠券、兌換代碼，購買方案或加值時套用。
+- **PWA**：手機與桌機都能用，可以加到主畫面。
 
 ## 開發
 
@@ -44,25 +43,8 @@ docker compose up -d --build   # db + api + web（Caddy），預設 http://local
 
 資料庫 schema 在 `apps/api/sql/schema.sql`，API 每次啟動都會以 `CREATE … IF NOT EXISTS` 套用；目前還沒部署過，所以沒有 migration。未設定 `DATABASE_URL` 時 API 改用記憶體（重啟即登出），只適合測試。
 
-## 功能
+## 授權與聲明
 
-前端從 `/v1/map/stations` 取得以站點分組的車況：地圖只畫站點與電子圍籬，點進車輛才標出它的定位；Email OTP、費率、目前騎乘與預估車資、借還車、還車照片與刷卡結帳、預約（保留 5 分鐘並倒數，次數依 oloo 規定一小時最多 2 次）、騎乘計時（自動歸還／歸還後重借）、騎乘紀錄、訂閱方案（校區公開販售的方案、oloo 的可否購買判斷、付款前試算、以帳號選定的信用卡購買與加值時數、取消自動續約與更改下期方案）與優惠券（列出、兌換代碼、購買時套用）皆已接上 staging；騎乘還車與結帳已在真車上跑過（$0 帳單），方案購買、加值與優惠券兌換依官方 App 的請求格式實作，尚未以真實付款驗證。oloo token 只存在 Fastify 記憶體或 PostgreSQL 的 AES-256-GCM 密文中，PWA 只持有 HttpOnly 的不透明 session cookie。provider token 用到一半壽命時，API 會透過 `keep-login` 自動延長；oloo 回 401 時 API 會清掉本機 session，前端回到登入畫面。
+olowo 由 毛哥EM 製作，以 [Apache License 2.0](LICENSE) 授權。
 
-登入後，fleet adapter 會從 staging 取得車輛資訊、狀態、站點與全站預約，以全域快取共用 25 秒（同時間的多個請求只打一次上游，上游失敗時 5 分鐘內回傳上一份快照），只保留公開欄位並依站點分組後提供給前端；站點資料直接來自 oloo，所以未登入時 `/v1/map/stations` 回 `401 AUTH_REQUIRED`，前端先顯示登入；營運者若設定 `OLOO_ACCESS_TOKEN`，未登入的訪客也能看到站點（只讀）。由於 staging 本身要求 token 同時出現在 raw `Authorization` header 與 `access_token` query，Fastify 只在 server-to-server 請求中做此相容處理，永不把 token 送到瀏覽器。
-
-常用驗證：
-
-```sh
-pnpm run build
-pnpm test
-```
-
-瀏覽器測試（手機與桌機兩種 viewport）會攔截 olowo API 與 Mapbox，不會借到、歸還或預約真車。真實 staging mutation 必須使用明確指定的測試車輛。
-
-重新產生已遮蔽敏感值的 HAR inventory：
-
-```sh
-pnpm research:har
-```
-
-`research/` 只放本機研究素材，不會提交版本控制。請勿把 oloo token、HAR、帳密或原始回傳資料放進前端程式、文件或 commit。
+**免責聲明**：本專案僅供學術研究用途，與 oloo 官方無關，也未經其授權或背書。使用時請遵守 oloo 的服務條款（ToS），因使用本專案產生的任何後果由使用者自行負責。

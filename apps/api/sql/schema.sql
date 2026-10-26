@@ -62,12 +62,5 @@ CREATE TABLE IF NOT EXISTS idempotency_keys (
 
 CREATE INDEX IF NOT EXISTS idempotency_keys_created_at_idx ON idempotency_keys (created_at);
 
--- Reservations and cancellations made through olowo, for the rider's recent-usage hint.
-CREATE TABLE IF NOT EXISTS reservation_events (
-  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  provider_user_id bigint NOT NULL,
-  action text NOT NULL CHECK (action IN ('reserve', 'cancel')),
-  created_at timestamptz NOT NULL DEFAULT now()
-);
-
-CREATE INDEX IF NOT EXISTS reservation_events_user_time_idx ON reservation_events (provider_user_id, created_at);
+-- Reservation usage now comes from oloo (reservation/self-anhour); drop the old local log.
+DROP TABLE IF EXISTS reservation_events;

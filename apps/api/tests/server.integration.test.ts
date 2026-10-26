@@ -27,6 +27,7 @@ const closingAt = new Date(Date.now() - 1000).toISOString();
 const providerLog: string[] = [];
 let billLocation: string | null = null;
 let estimateEndedAt: string | null = null;
+let reservation: Record<string, unknown> | null = null;
 
 function json(response: ServerResponse, value: unknown, status = 200) {
 	response.writeHead(status, { "content-type": "application/json" });
@@ -138,7 +139,86 @@ async function providerHandler(request: IncomingMessage, response: ServerRespons
 		return json(response, { success: true, result: { pointsToDeduct: 0, amount: 9 } }, 201);
 	}
 	if (path === "/reservation/overall-current") return json(response, []);
-	if (path === "/reservation/current") return json(response, {});
+	if (path === "/reservation/current") return json(response, reservation ?? {});
+	if (path === "/reservation/scooters-info") {
+		reservation = { id: 4401, type: "SCOOTER", scootersInfoId: 12, createdAt: new Date().toISOString(), expired: Date.now() + 300_000 };
+		return json(response, reservation, 201);
+	}
+	if (path === "/reservation/self-anhour")
+		return json(response, [
+			{ id: 4400, type: "SCOOTER", isCancel: true, isPickUp: false, scootersInfoId: 12, createdAt: new Date(Date.now() - 20 * 60_000).toISOString() },
+			{ id: 4399, type: "SCOOTER", isCancel: false, isPickUp: true, scootersInfoId: 12, createdAt: new Date(Date.now() - 2 * 3600_000).toISOString() }
+		]);
+	if (path === "/rental-logs/get-rental-logs-by-account")
+		return json(response, [
+			{
+				id: 3172502,
+				engineLicenseNumber: "JZ-401",
+				lastRentalStartedAt: "2026-09-22T11:56:00.000Z",
+				lastRentalEndedAt: "2026-09-22T11:56:55.000Z",
+				cost: 3,
+				normalMinutes: 1,
+				discountNormalMinutes: 0,
+				stopMinutes: 1,
+				discountStopMinutes: 0,
+				isPaid: true,
+				startStationId: 3,
+				endStationId: 99,
+				imei: "private-imei",
+				accountId: 115827,
+				ridePlan: JSON.stringify({ id: 53, name: "月用量 Starter" }),
+				onOffActionsRecord: JSON.stringify([
+					{ type: "off", totalTime: 0, createdAt: 1 },
+					{ type: "on", totalTime: 2100, createdAt: 2 },
+					{ type: "off", totalTime: 52700, createdAt: 3 }
+				])
+			}
+		]);
+	if (path === "/contracts")
+		return json(response, [
+			{ id: 49, name: "月用量 Starter", paymentType: "Monthly", itemId: 53, details: JSON.stringify({ topUp: [{ id: 1, minutes: 15, price: 33 }] }) },
+			{ id: 60, name: "遊客 1.5 小時悠遊券", paymentType: "PayOff", itemId: 70, details: JSON.stringify({ actualPayPrice: 150 }) },
+			{ id: 1, name: "beta_Starter 1", paymentType: "Monthly", itemId: 16, details: JSON.stringify({ disabled: true }) }
+		]);
+	if (path === "/ride-plans")
+		return json(response, [
+			{
+				id: 53,
+				name: "月用量 Starter",
+				isActive: true,
+				normalRate: 2.4,
+				actualPayPrice: 120,
+				planMinutes: 60,
+				period: 30,
+				description: JSON.stringify([{ text: "每個月", suffixTag: "60 分鐘免費" }]),
+				details: JSON.stringify({ cardBanner: { title: "新·初心者" } })
+			},
+			{
+				id: 70,
+				name: "遊客 1.5 小時悠遊券",
+				isActive: true,
+				normalRate: 1,
+				actualPayPrice: 150,
+				planMinutes: 90,
+				period: 0.0625,
+				description: JSON.stringify([{ prefixTag: "1.5 小時內", text: "讓你自由借還" }])
+			},
+			{ id: 16, name: "beta_Starter", isActive: false }
+		]);
+	if (path === "/oloo-options") return json(response, [{ id: 24, name: "area_contract_mapping", value: JSON.stringify({ "NCTU-NTHU": [60, 49, 1], default: [60] }) }]);
+	if (path === "/user-contracts/take-self-effect")
+		return json(response, {
+			activeUserContract: [{ id: 53393, contractId: 49, details: JSON.stringify({ autoRenewCanceled: null, opts: { autoRenewCanceled: false } }) }],
+			activatedUserRidePlan: {
+				startDate: "2026-10-01T18:37:34.000Z",
+				endDate: "2026-11-01T15:59:59.000Z",
+				remainingMinutes: 12,
+				ridePlanId: 53,
+				ridePlan: { name: "月用量 Starter", planMinutes: 60, normalRate: 2.4 }
+			},
+			nextActivateRidePlan: { id: 53, name: "月用量 Starter" }
+		});
+	if (path.startsWith("/contracts/can-purchase/")) return json(response, path.endsWith("/60") ? { canPurchase: false, reasons: ["ACTIVE_CONTRACT"] } : { canPurchase: true, reasons: [] });
 	if (path === "/scooters-infos/new-rent") {
 		activeRide = {
 			id: nextRideId++,
@@ -308,6 +388,46 @@ test("Fastify completes the authenticated ride and reservation workflow", async 
 	const automation = (await (await api("/v1/rides/9002/automation")).json()) as { automation: { state: string } };
 	assert.equal(automation.automation.state, "completed");
 	rideStartOffsetMs = 0;
+
+	// Reservations: the countdown comes from oloo's epoch-millisecond deadline, usage from oloo's own hourly list.
+	response = await api("/v1/reservations", { method: "POST", headers: { "idempotency-key": "reserve-key" }, body: JSON.stringify({ engineLicenseNumber: "JZ-333" }) });
+	const reserved = (await response.json()) as { reservationId: number; expiresAt: string };
+	assert.equal(reserved.reservationId, 4401);
+	assert.ok(Math.abs(Date.parse(reserved.expiresAt) - (Date.now() + 300_000)) < 5_000, "expiresAt is an ISO time five minutes out");
+	const [current] = (await (await api("/v1/reservations/current")).json()) as Array<{ id: number; scooterId: number; expiresAt: string }>;
+	assert.deepEqual([current?.id, current?.scooterId, current?.expiresAt], [4401, 12, reserved.expiresAt]);
+	const usage = (await (await api("/v1/reservations/usage")).json()) as Record<string, unknown>;
+	assert.deepEqual([usage.limitPerHour, usage.reservedLastHour, usage.cancelledLastHour, usage.remaining], [2, 1, 1, 1], "only the last hour counts, as oloo does");
+	reservation = null;
+
+	const { rides } = (await (await api("/v1/rides/history")).json()) as { rides: Array<Record<string, unknown>> };
+	assert.deepEqual(rides[0], {
+		id: 3172502,
+		label: "JZ-401",
+		startedAt: "2026-09-22T11:56:00.000Z",
+		endedAt: "2026-09-22T11:56:55.000Z",
+		durationSeconds: 55,
+		cost: 3,
+		ridingMinutes: 1,
+		parkedMinutes: 1,
+		engineOnSeconds: 52.7,
+		engineOffSeconds: 2.1,
+		paid: true,
+		planName: "月用量 Starter",
+		startStation: "浩然圖書館",
+		endStation: null
+	});
+
+	const catalog = (await (await api("/v1/plans?region=NCTU-NTHU")).json()) as { current: Record<string, unknown>; plans: Array<Record<string, unknown>> };
+	assert.deepEqual(
+		catalog.plans.map(plan => [plan.contractId, plan.kind, plan.current, plan.canPurchase, plan.reasons]),
+		[
+			[60, "pass", false, false, ["ACTIVE_CONTRACT"]],
+			[49, "monthly", true, true, []]
+		],
+		"disabled contracts are hidden and each plan carries oloo's own purchase check"
+	);
+	assert.deepEqual([catalog.current.name, catalog.current.remainingMinutes, catalog.current.autoRenew, catalog.current.topUps], ["月用量 Starter", 12, true, [{ minutes: 15, price: 33, tag: null }]]);
 
 	revokeRides = true;
 	response = await api("/v1/rides/current");

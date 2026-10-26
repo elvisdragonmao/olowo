@@ -8,10 +8,12 @@ import { fetchCards, placeholderPhoto, toPublicBill, uploadReturnPhoto, type Pub
 import { applySchema, createDatabase } from "./database.js";
 import { EfenceCache } from "./efences.js";
 import type { FleetSnapshot } from "./fleet.js";
+import { toRideHistory } from "./history.js";
 import { IdempotencyStore } from "./idempotency.js";
 import { olooRequest, OlooUpstreamError, resolveProviderScooter } from "./oloo.js";
 import { buildFleetSnapshot, FleetCache, reservedScooterIds, type RawFleet } from "./oloo-fleet.js";
-import { ReservationLog } from "./reservation-log.js";
+import { fetchPlanCatalog } from "./plans.js";
+import { reservationUsage, toPublicReservation } from "./reservations.js";
 import { publicAutomation, RideAutomationStore } from "./ride-automation.js";
 import { ScheduledActionRepository, type StoredScheduledAction } from "./scheduled-action-repository.js";
 
@@ -55,7 +57,6 @@ const scheduledActions = new ScheduledActionRepository(database);
 const persistFailure = (kind: string, id: string, error: unknown) => app.log.error({ err: error, kind, scheduledActionId: id }, "failed to persist scheduled action");
 const claimJob = (task: { id: string }) => scheduledActions.claim(task.id);
 const rideAutomations = new RideAutomationStore(task => void scheduledActions.saveRide(task).catch(error => persistFailure("ride", task.id, error)), claimJob);
-const reservationLog = new ReservationLog(database);
 // End time and station oloo fixed when each ride was returned; the bill is priced at that moment, not at checkout.
 const returnedRides = new Map<number, { endedAt: string; returnStation: string | null }>();
 const refreshes = new Map<number, Promise<void>>();
@@ -202,16 +203,23 @@ async function waitForActiveRide(session: ProviderSession, scooterId: number) {
  * sends it, otherwise the scooter's own last GPS fix.
  */
 async function returnCurrentRide(session: ProviderSession, rideId: number, scooterId: number, riderLocation?: { latitude: number; longitude: number }) {
-	const active = await getActiveRide(session);
+	// oloo fixes the end time when it receives the bill request, so everything before it runs in parallel.
+	const started = Date.now();
+	const [active, scooter] = await Promise.all([
+		getActiveRide(session),
+		resolveScooter(session, scooterId),
+		riderLocation || fleetCache.position(scooterId) ? null : fleetCache.get(session.accessToken).catch(() => null)
+	]);
 	if (!active || active.id !== rideId || active.scooterId !== scooterId) {
 		throw new OlooUpstreamError(409, "Active ride changed; no return command was sent");
 	}
-	const scooter = await resolveScooter(session, scooterId);
 	const location = riderLocation ?? fleetCache.position(scooterId);
+	const checked = Date.now();
 	let closing: PublicBill | null = null;
 	if (location) {
 		closing = toPublicBill(await olooRequest<unknown>(environment.OLOO_API_BASE_URL, `/scooters-infos/bill?latitude=${location.latitude}&longitude=${location.longitude}`, session.accessToken));
 	}
+	const billed = Date.now();
 	const upstream = await olooRequest<{ success?: boolean }>(environment.OLOO_API_BASE_URL, "/scooters-infos/return", session.accessToken, {
 		method: "POST",
 		body: JSON.stringify({ imei: scooter.imei })
@@ -219,6 +227,7 @@ async function returnCurrentRide(session: ProviderSession, rideId: number, scoot
 	requireSuccess(upstream, "oloo rejected the return");
 	const returned = { endedAt: closing?.endedAt ?? new Date().toISOString(), returnStation: closing?.returnStation ?? null };
 	returnedRides.set(rideId, returned);
+	app.log.info({ rideId, checkMs: checked - started, billMs: billed - checked, returnMs: Date.now() - billed, endedAt: returned.endedAt }, "ride returned");
 	return { success: true, rideId, scooter, ...returned, locationSource: riderLocation ? "rider" : location ? "scooter" : "none" };
 }
 
@@ -253,6 +262,9 @@ function startRideAutomation(
 	session: ProviderSession,
 	input: { id?: string; createdAt?: number; rideId: number; scooterId: number; action: "notify" | "return" | "return_and_reborrow"; triggerAt: number }
 ) {
+	// Warm the fleet cache shortly before the timer so the return is priced at the scooter's fix without an extra fetch.
+	const warm = setTimeout(() => void fleetCache.get(session.accessToken).catch(() => undefined), Math.max(0, input.triggerAt - Date.now() - 8_000));
+	warm.unref();
 	return rideAutomations.schedule({ userId: session.userId, ...input }, async task => {
 		if (task.action === "notify") return;
 		const returned = await returnCurrentRide(session, task.rideId, task.scooterId);
@@ -487,27 +499,17 @@ app.post("/v1/rides/:rideId/checkout", async (request, reply) => {
 	return reply.send(result);
 });
 
+// Counted by oloo (reservation/self-anhour), so reservations made in the official app are included.
 app.get("/v1/reservations/usage", async (request, reply) => {
 	const session = await getSession(request, reply);
 	if (!session) return reply.code(401).send({ code: "AUTH_REQUIRED", message: "Please sign in" });
-	return reply.send(await reservationLog.usage(session.userId));
+	return reply.send(reservationUsage(await olooRequest<unknown>(environment.OLOO_API_BASE_URL, "/reservation/self-anhour", session.accessToken)));
 });
 
 app.get("/v1/reservations/current", async (request, reply) => {
 	const session = await getSession(request, reply);
 	if (!session) return reply.code(401).send({ code: "AUTH_REQUIRED", message: "Please sign in" });
-	const reservations = await getCurrentReservations(session);
-	return reply.send(
-		reservations.map(item => ({
-			id: item.id ?? item.reservationId,
-			type: item.type,
-			scooterId: item.scootersInfoId,
-			vehicleId: item.vehiclesInfoId,
-			label: item.EngineLicenseNumber ?? (item.scootersInfo && typeof item.scootersInfo === "object" ? (item.scootersInfo as Record<string, unknown>).EngineLicenseNumber : undefined),
-			createdAt: item.createdAt,
-			expiresAt: item.expired
-		}))
-	);
+	return reply.send((await getCurrentReservations(session)).map(toPublicReservation));
 });
 
 app.post("/v1/reservations", async (request, reply) => {
@@ -522,8 +524,8 @@ app.post("/v1/reservations", async (request, reply) => {
 		})
 	);
 	ownReservationCache.delete(session.userId);
-	await reservationLog.record(session.userId, "reserve").catch(error => app.log.warn({ err: error }, "failed to record reservation"));
-	return reply.send({ success: true, reservationId: result.id, expiresAt: result.expired });
+	const reservation = toPublicReservation({ createdAt: new Date().toISOString(), ...result });
+	return reply.send({ success: true, reservationId: reservation.id, expiresAt: reservation.expiresAt });
 });
 
 app.delete("/v1/reservations/:reservationId", async (request, reply) => {
@@ -535,8 +537,32 @@ app.delete("/v1/reservations/:reservationId", async (request, reply) => {
 		olooRequest(environment.OLOO_API_BASE_URL, "/reservation/cancel", session.accessToken, { method: "POST", body: JSON.stringify({ reservationId }) })
 	);
 	ownReservationCache.delete(session.userId);
-	await reservationLog.record(session.userId, "cancel").catch(error => app.log.warn({ err: error }, "failed to record cancellation"));
 	return reply.send({ success: true });
+});
+
+app.get("/v1/rides/history", async (request, reply) => {
+	const session = await getSession(request, reply);
+	if (!session) return reply.code(401).send({ code: "AUTH_REQUIRED", message: "Please sign in" });
+	const [logs, fleet] = await Promise.all([
+		olooRequest<unknown>(environment.OLOO_API_BASE_URL, "/rental-logs/get-rental-logs-by-account", session.accessToken),
+		fleetCache.get(session.accessToken).catch(() => null)
+	]);
+	const names = new Map(fleet?.stations.flatMap(station => (typeof station.id === "number" && typeof station.name === "string" ? [[station.id, station.name] as const] : [])) ?? []);
+	return reply.send({ rides: toRideHistory(logs, id => names.get(id) ?? null) });
+});
+
+app.get("/v1/plans", async (request, reply) => {
+	const session = await getSession(request, reply);
+	if (!session) return reply.code(401).send({ code: "AUTH_REQUIRED", message: "Please sign in" });
+	const { region } = z
+		.object({
+			region: z
+				.string()
+				.regex(/^[A-Z-]{2,24}$/)
+				.optional()
+		})
+		.parse(request.query);
+	return reply.send(await fetchPlanCatalog(environment.OLOO_API_BASE_URL, session.accessToken, region ?? null));
 });
 
 app.get("/v1/auth/session", async (request, reply) => {

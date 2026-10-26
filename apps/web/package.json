@@ -6,6 +6,7 @@
 	"scripts": {
 		"build": "tsc && vite build && node scripts/prepare-sites-build.mjs",
 		"dev": "vite",
+		"screenshots": "OLOWO_SCREENSHOTS=1 playwright test tests/screenshots.spec.ts",
 		"test:e2e": "playwright test",
 		"test:sites": "node --test tests/sites-worker.test.mjs"
 	},

@@ -19,7 +19,8 @@ export default defineConfig({
 	],
 	webServer: {
 		command: `pnpm exec vite --host 127.0.0.1 --port ${testPort} --strictPort`,
-		env: { VITE_MAPBOX_ACCESS_TOKEN: "pk.e2e-test-token", VITE_API_BASE_URL: "" },
+		// README screenshots use the real Mapbox token from .env.local; tests never reach Mapbox.
+		env: process.env.OLOWO_SCREENSHOTS === "1" ? { VITE_API_BASE_URL: "" } : { VITE_MAPBOX_ACCESS_TOKEN: "pk.e2e-test-token", VITE_API_BASE_URL: "" },
 		url: `http://127.0.0.1:${testPort}/`,
 		reuseExistingServer: false
 	}

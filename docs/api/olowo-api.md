@@ -252,7 +252,32 @@ oloo's `/rental-logs/get-rental-logs-by-account` (the latest 200 rides) as `{ ri
 
 ### `GET /v1/plans?region=`
 
-The plans oloo offers in a region (`oloo-options` → `area_contract_mapping`, `default` when the region is unknown), joined with `/contracts` and `/ride-plans`. Each plan carries oloo's own eligibility from `GET /contracts/can-purchase/:contractId` (`canPurchase`, `reasons`). `current` is the active plan from `/user-contracts/take-self-effect` with remaining minutes, end date, auto-renew and top-up options. Purchasing is not exposed; riders buy in the official app.
+The plans oloo offers in a region (`oloo-options` → `area_contract_mapping`, `default` when the region is unknown), joined with `/contracts` and `/ride-plans`. Each plan carries oloo's own eligibility from `GET /contracts/can-purchase/:contractId` (`canPurchase`, `reasons`). `current` is the active plan from `/user-contracts/take-self-effect` with `userContractId`, remaining minutes, end date, auto-renew and top-up options (`{ id, minutes, price, tag }`).
+
+### Buying, top-ups and renewal
+
+The request shapes come from the official app (5.50.0); none of these has been exercised against a real charge yet.
+
+| olowo                                                                | oloo                                                                   | body                                      |
+| -------------------------------------------------------------------- | ---------------------------------------------------------------------- | ----------------------------------------- |
+| `POST /v1/plans/:contractId/estimate`                                | `POST /contracts/estimate-purchase/:contractId`                        | `{ userCouponId? }`                       |
+| `POST /v1/plans/:contractId/purchase` (idempotency key)              | `POST /contracts/purchase-with-creditcard/:contractId`                 | `{ userCouponId? }`                       |
+| `POST /v1/plans/current/top-ups/:topUpId/estimate`                   | `POST /user-contracts/estimate-top-up/:userContractId/:topUpId`        | `{ userCouponId? }`                       |
+| `POST /v1/plans/current/top-ups/:topUpId/purchase` (idempotency key) | `POST /user-contracts/top-up-with-creditcard/:userContractId/:topUpId` | `{ userCouponId? }`                       |
+| `DELETE /v1/plans/current/auto-renew`                                | `POST /user-contracts/cancel-auto-renew`                               | `{ id: userContractId }`                  |
+| `PUT /v1/plans/current/next` `{ contractId }`                        | `POST /user-contracts/specify-auto-renew-contract-id`                  | `{ userContractId, autoRenewContractId }` |
+
+The card is the one selected in the rider's oloo account; the app sends `prime` and `frontendRedirectUrl` only for LINE Pay, which olowo does not offer. The plan estimate answers `{ contractId, amount, title, startsAt, endsAt }`: with a monthly plan running, a new monthly plan starts when the current one ends. Purchases and plan changes are limited to contracts listed in some region of `area_contract_mapping`. `/contracts` also holds about 50 hidden or retired contracts (campaign passes, a campus's staff or orientation plans, one-off compensation); `can-purchase` answers `true` for most of them, but the official app never lists them, so olowo refuses them with `404`.
+
+## Coupons
+
+### `GET /v1/coupons`
+
+`/user-coupons/self` joined with the `/coupons` catalog: `{ coupons: [{ id, name, description, information, scope, startsAt, endsAt, usedAt, state }] }`. `scope` is read from `usableConditions` (`forContractPurchase` → `plan`, `forTopUp` → `topUp`, `forScooterRental` or `rentalCost` → `ride`, otherwise `any`); `state` is `usable`, `pending`, `used` or `expired`. The coupon's own code stays on the server.
+
+### `POST /v1/coupons/redeem`
+
+`{ code }` (letters, digits, `_` and `-`). Like the app, the API asks `GET /coupons/detect-code-type/:code` and then posts `coupons/acquire-by-code/:code` for a campaign code or `user-coupons/acquire-by-code/:code` for a code another rider shared. An unknown code answers `404`.
 
 ## Return and checkout
 

@@ -21,7 +21,9 @@ olowo is a real, responsive oloo client for phones and desktops. It is not a pho
 - Borrowing offers two buttons: 「立即借用」 and 「預約 5 分鐘」 (with a countdown, also in the dock). Reservation limits quote oloo's own rules and counts (`/v1/reservations/usage`); never invent quotas.
 - Ride timers offer only 自動歸還 and 歸還後重借 at 0:30, 0:58, 4:58 or a custom duration. They are toggles that apply on tap and stay editable; nothing asks for a second confirmation.
 - After return the rider goes straight to checkout with the blank photo already attached (「還車照片（可選）」); a real photo can replace it.
-- The account view links to 騎乘紀錄 (`?view=history`) and 訂閱方案 (`?view=plans`, oloo's own purchase check; buying stays in the official app).
+- The account view links to 騎乘紀錄 (`?view=history`), 訂閱方案 (`?view=plans`) and 優惠券 (`?view=coupons`), and ends with the credits (毛哥EM, GitHub link).
+- Buying a plan or a top-up always shows oloo's estimate (amount, start and end) before 「付款」; that step is the price, not a confirmation dialog. Only plans some region offers are sold; hidden campaign or staff plans are not.
+- README screenshots come from `pnpm screenshots` (`tests/screenshots.spec.ts`, mocked API, real Mapbox tiles).
 - Icons are the olowo wordmark (`public/assets/brand`); do not ship oloo's logo or artwork.
 - Phones (< 920 px): a draggable bottom sheet with `peek`, `half` and `full` snaps. Detail views open at `half` so the map stays visible. Desktop: a floating left panel over a full-bleed map.
 - Signed-out riders see sign-in first: station data comes from oloo and needs their credential. Do not add demo or placeholder stations.

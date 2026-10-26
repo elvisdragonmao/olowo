@@ -1,6 +1,16 @@
 # olowo
 
-一個把電量、定位、可借原因與騎乘成本說清楚的第三方 oloo Web/PWA client。
+一個把電量、定位、可借原因與騎乘成本說清楚的第三方 oloo Web/PWA client。由 毛哥EM 製作，不是 oloo 官方 App。覺得好用的話，在 GitHub 給顆 ⭐。
+
+![桌機：地圖上的站點、電子圍籬與校區車況](docs/screenshots/desktop-map.png)
+
+<p>
+  <img src="docs/screenshots/phone-station.png" width="240" alt="手機：站點內每台車的電量與定位">
+  <img src="docs/screenshots/phone-ride.png" width="240" alt="手機：騎乘中，騎滿 58 秒自動歸還">
+  <img src="docs/screenshots/phone-plans.png" width="240" alt="手機：訂閱方案、加值時數與續約">
+</p>
+
+截圖用假資料與真實 Mapbox 底圖產生：`pnpm --filter @olowo/web screenshots`（需要 `apps/web/.env.local` 的 Mapbox token）。
 
 目前包含地圖優先、手機與桌機皆可用的 RWD PWA、Fastify 安全邊界與已驗證的 staging 整合：
 
@@ -36,7 +46,7 @@ docker compose up -d --build   # db + api + web（Caddy），預設 http://local
 
 ## 功能
 
-前端從 `/v1/map/stations` 取得以站點分組的車況：地圖只畫站點與電子圍籬，點進車輛才標出它的定位；Email OTP、費率、目前騎乘與預估車資、借還車、還車照片與刷卡結帳、預約（保留 5 分鐘並倒數，次數依 oloo 規定一小時最多 2 次）、騎乘計時（自動歸還／歸還後重借）、騎乘紀錄與訂閱方案（列出校區可訂閱的方案與 oloo 的可否購買判斷，購買仍在官方 App）皆已接上 staging；結帳流程依 HAR 契約實作，尚未以真實付款驗證。oloo token 只存在 Fastify 記憶體或 PostgreSQL 的 AES-256-GCM 密文中，PWA 只持有 HttpOnly 的不透明 session cookie。provider token 用到一半壽命時，API 會透過 `keep-login` 自動延長；oloo 回 401 時 API 會清掉本機 session，前端回到登入畫面。
+前端從 `/v1/map/stations` 取得以站點分組的車況：地圖只畫站點與電子圍籬，點進車輛才標出它的定位；Email OTP、費率、目前騎乘與預估車資、借還車、還車照片與刷卡結帳、預約（保留 5 分鐘並倒數，次數依 oloo 規定一小時最多 2 次）、騎乘計時（自動歸還／歸還後重借）、騎乘紀錄、訂閱方案（校區公開販售的方案、oloo 的可否購買判斷、付款前試算、以帳號選定的信用卡購買與加值時數、取消自動續約與更改下期方案）與優惠券（列出、兌換代碼、購買時套用）皆已接上 staging；騎乘還車與結帳已在真車上跑過（$0 帳單），方案購買、加值與優惠券兌換依官方 App 的請求格式實作，尚未以真實付款驗證。oloo token 只存在 Fastify 記憶體或 PostgreSQL 的 AES-256-GCM 密文中，PWA 只持有 HttpOnly 的不透明 session cookie。provider token 用到一半壽命時，API 會透過 `keep-login` 自動延長；oloo 回 401 時 API 會清掉本機 session，前端回到登入畫面。
 
 登入後，fleet adapter 會從 staging 取得車輛資訊、狀態、站點與全站預約，以全域快取共用 25 秒（同時間的多個請求只打一次上游，上游失敗時 5 分鐘內回傳上一份快照），只保留公開欄位並依站點分組後提供給前端；站點資料直接來自 oloo，所以未登入時 `/v1/map/stations` 回 `401 AUTH_REQUIRED`，前端先顯示登入；營運者若設定 `OLOO_ACCESS_TOKEN`，未登入的訪客也能看到站點（只讀）。由於 staging 本身要求 token 同時出現在 raw `Authorization` header 與 `access_token` query，Fastify 只在 server-to-server 請求中做此相容處理，永不把 token 送到瀏覽器。
 

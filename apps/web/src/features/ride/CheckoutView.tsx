@@ -1,6 +1,6 @@
 import { ArrowLeft, Camera, CheckCircle, CreditCard } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useUiStore } from "../../app/useUiStore";
 import { apiRequest, idempotencyKey } from "../../shared/api";
 import { timeOfDay } from "../../shared/format";
@@ -22,7 +22,8 @@ type Paid = { amount: number | null; pointsDeducted: number | null; label: strin
 
 export function CheckoutView() {
 	const back = useUiStore(state => state.back);
-	const ride = useUnpaidRide();
+	// Right after a return oloo may take a moment to list the ride as unpaid, so poll until it shows up.
+	const ride = useUnpaidRide({ poll: true });
 	const [paid, setPaid] = useState<Paid | null>(null);
 
 	return (
@@ -104,14 +105,22 @@ function Checkout({ ride, onPaid }: { ride: UnpaidRide; onPaid: (paid: Paid) => 
 	}, [cardId, cards.data]);
 	useEffect(() => () => void (preview && URL.revokeObjectURL(preview)), [preview]);
 
+	// Only the most recent upload counts, so a slow placeholder cannot replace a photo the rider took after it.
+	const latestUpload = useRef(0);
 	const upload = useMutation({
-		mutationFn: async (file: File | "placeholder") => {
+		mutationFn: async ({ file }: { file: File | "placeholder"; seq: number }) => {
 			if (file === "placeholder") return apiRequest<{ imageId: number }>(`/v1/rides/${ride.id}/photo?placeholder=1`, { method: "POST" });
 			const photo = await compressPhoto(file);
 			return apiRequest<{ imageId: number }>(`/v1/rides/${ride.id}/photo`, { method: "POST", headers: { "content-type": "image/jpeg" }, body: photo });
 		},
-		onSuccess: data => setImageId(data.imageId)
+		onSuccess: (data, { seq }) => seq === latestUpload.current && setImageId(data.imageId)
 	});
+	const { mutate: sendUpload } = upload;
+	const sendPhoto = useCallback((file: File | "placeholder") => sendUpload({ file, seq: ++latestUpload.current }), [sendUpload]);
+	// The photo is optional: start with the blank placeholder so the rider can pay at once.
+	useEffect(() => {
+		if (latestUpload.current === 0) sendPhoto("placeholder");
+	}, [sendPhoto]);
 	const pay = useMutation({
 		mutationFn: () =>
 			apiRequest<{ amount: number | null; pointsDeducted: number | null }>(`/v1/rides/${ride.id}/checkout`, {
@@ -166,12 +175,12 @@ function Checkout({ ride, onPaid }: { ride: UnpaidRide; onPaid: (paid: Paid) => 
 
 			<section className="section">
 				<h3 className="section-title">
-					<Camera size={16} weight="bold" aria-hidden /> 還車照片
+					<Camera size={16} weight="bold" aria-hidden /> 還車照片（可選）
 				</h3>
-				<p className="muted small">oloo 結帳需要一張停妥車輛的照片。請拍下車身與站點格位。</p>
+				<p className="muted small">已自動附上一張空白照片，可以直接付款。想留存證明的話，拍下車身與站點格位。</p>
 				<label className="photo-picker" data-done={imageId != null}>
 					{preview ? <img src={preview} alt="還車照片預覽" /> : <Camera size={28} weight="duotone" aria-hidden />}
-					<span>{upload.isPending ? "上傳中…" : imageId != null ? (preview ? "已上傳，點此重拍" : "已上傳空白照片，點此改拍") : "拍攝還車照片"}</span>
+					<span>{upload.isPending ? "上傳中…" : imageId != null ? (preview ? "已上傳，點此重拍" : "已附上空白照片，點此改拍") : "拍攝還車照片"}</span>
 					<input
 						type="file"
 						accept="image/*"
@@ -182,22 +191,24 @@ function Checkout({ ride, onPaid }: { ride: UnpaidRide; onPaid: (paid: Paid) => 
 							if (!file) return;
 							setImageId(null);
 							setPreview(URL.createObjectURL(file));
-							upload.mutate(file);
+							sendPhoto(file);
 						}}
 					/>
 				</label>
-				<button
-					type="button"
-					className="button button-quiet button-block"
-					disabled={upload.isPending}
-					onClick={() => {
-						setPreview(null);
-						setImageId(null);
-						upload.mutate("placeholder");
-					}}
-				>
-					上傳空白照片（1×1 PNG）
-				</button>
+				{preview || (upload.isError && imageId == null) ? (
+					<button
+						type="button"
+						className="button button-quiet button-block"
+						disabled={upload.isPending}
+						onClick={() => {
+							setPreview(null);
+							setImageId(null);
+							sendPhoto("placeholder");
+						}}
+					>
+						改用空白照片
+					</button>
+				) : null}
 				{upload.error ? <p className="inline-error">照片上傳失敗：{upload.error.message}</p> : null}
 			</section>
 

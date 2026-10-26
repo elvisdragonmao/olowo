@@ -18,11 +18,14 @@ olowo is a real, responsive oloo client for phones and desktops. It is not a pho
 - Controller fault reports are warnings, never blocks; oloo decides at rent time.
 - E-fences are prominent: the riding area has a solid green edge and everything outside oloo's operating areas is dimmed; restricted zones are filled in oloo's colour.
 - No battery or availability filters. The station list is campus-scoped (search reaches all campuses), sorted by distance with stations that have nothing to borrow at the bottom.
-- Borrowing offers two buttons: 「立即借用」 and 「預約 5 分鐘」 (with a countdown). Ride timers offer only 自動歸還 and 歸還後重借 at 0:28, 1:28, 2:28 or a custom duration.
-- After return the rider goes straight to checkout (bill, genuine return photo, card, pay).
+- Borrowing offers two buttons: 「立即借用」 and 「預約 5 分鐘」 (with a countdown, also in the dock). Reservation limits quote oloo's own rules and counts (`/v1/reservations/usage`); never invent quotas.
+- Ride timers offer only 自動歸還 and 歸還後重借 at 0:30, 0:58, 4:58 or a custom duration. They are toggles that apply on tap and stay editable; nothing asks for a second confirmation.
+- After return the rider goes straight to checkout with the blank photo already attached (「還車照片（可選）」); a real photo can replace it.
+- The account view links to 騎乘紀錄 (`?view=history`) and 訂閱方案 (`?view=plans`, oloo's own purchase check; buying stays in the official app).
+- Icons are the olowo wordmark (`public/assets/brand`); do not ship oloo's logo or artwork.
 - Phones (< 920 px): a draggable bottom sheet with `peek`, `half` and `full` snaps. Detail views open at `half` so the map stays visible. Desktop: a floating left panel over a full-bleed map.
 - Signed-out riders see sign-in first: station data comes from oloo and needs their credential. Do not add demo or placeholder stations.
-- Every view is addressable by URL (`?station=`, `?scooter=`, `?view=ride|checkout|scan|account`) and the browser back button walks back through views.
+- Every view is addressable by URL (`?station=`, `?scooter=`, `?view=ride|checkout|scan|account|history|plans`) and the browser back button walks back through views.
 - Keep text compact (body 14 px, metadata 12–13 px). Large type is reserved for a single hero number per view (available count, battery, ride clock).
 - Label an available scooter `可借`; do not use claims such as `真的借得到`. Unavailable reasons are olowo inferences and must say so.
 - Do not add an address selector.
@@ -30,7 +33,7 @@ olowo is a real, responsive oloo client for phones and desktops. It is not a pho
 ## Structure
 
 - `src/app/` — shell state (`useUiStore`: view, sheet snap, filters, history sync) and the responsive `Panel`.
-- `src/features/<feature>/` — `map` (Mapbox canvas and pins), `stations`, `scooter`, `ride`, `auth`, `fleet` (DTOs and query), `location`.
+- `src/features/<feature>/` — `map` (Mapbox canvas and pins), `stations`, `scooter`, `ride`, `scan`, `auth`, `account` (history, plans), `fleet` (DTOs and query), `location`.
 - `src/shared/` — API client and formatters. `src/styles/app.css` holds all styles, organised by layer with tokens on `:root` and a dark scheme.
 - TanStack Query owns server state; Zustand only holds ephemeral UI state.
 

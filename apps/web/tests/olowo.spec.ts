@@ -184,49 +184,78 @@ test("reserve with a countdown, borrow with a timer, return, photo and pay", asy
 	await expect(panel(page).getByRole("heading", { name: /JZ-333/ })).toBeVisible();
 	await panel(page).getByRole("button", { name: "預約 5 分鐘" }).click();
 	await expect(panel(page).getByText(/取車時間剩 0[45]:\d\d/)).toBeVisible();
-	await expect(panel(page).getByText(/最近一小時預約 1 次/)).toBeVisible();
+	await expect(panel(page).getByText(/這一小時還可預約 1 次/)).toBeVisible();
 	await expect(panel(page).getByRole("button", { name: "借用預約的車" })).toBeVisible();
 	await page.screenshot({ path: test.info().outputPath("reserved.png") });
 
+	// Timers are toggles applied with the rental; there is no confirmation step anywhere.
 	await expand();
-	await panel(page).getByText("借用後計時").click();
-	await panel(page).getByRole("radio", { name: "歸還後重借" }).click();
-	await panel(page).getByRole("radio", { name: "28 秒" }).click();
+	await panel(page)
+		.getByRole("button", { name: /歸還後重借/ })
+		.click();
+	await expect(panel(page).getByRole("button", { name: /歸還後重借/ })).toHaveAttribute("aria-pressed", "true");
+	await panel(page).getByRole("radio", { name: "30 秒" }).click();
+	await expect(panel(page).getByText(/騎滿 30 秒 時歸還、以空白照片結帳並重借同一台/)).toBeVisible();
 	await panel(page).getByRole("button", { name: "借用預約的車" }).click();
-	await expect(panel(page).getByText(/騎乘滿 28 秒 時歸還、以空白照片自動結帳後重借/)).toBeVisible();
-	await panel(page).getByRole("button", { name: "確認借用" }).click();
 
 	await expect(page).toHaveURL(/view=ride/);
 	await expect(panel(page).getByText(/預估 \$4/)).toBeVisible();
 	const rent = api.requests.find(request => request.method === "POST" && request.path === "/v1/rides");
-	expect(rent?.body).toMatchObject({ scooterId: 1512, reservationId: 55, automation: { action: "return_and_reborrow", afterRideSeconds: 28 } });
+	expect(rent?.body).toMatchObject({ scooterId: 1512, reservationId: 55, automation: { action: "return_and_reborrow", afterRideSeconds: 30 } });
+	await expect(panel(page).getByText(/騎乘滿 30 秒 時歸還後重借 · 還有/)).toBeVisible();
 
 	await expand();
-	await expect(panel(page).getByRole("radio", { name: "提醒" })).toHaveCount(0);
-	await panel(page).getByRole("radio", { name: "自動歸還" }).click();
+	await panel(page)
+		.getByRole("button", { name: /自動歸還/ })
+		.click();
+	await expect(panel(page).getByText(/騎乘滿 30 秒 時自動歸還 · 還有/)).toBeVisible();
 	await panel(page).getByRole("radio", { name: "自訂" }).click();
 	await panel(page).getByLabel("時長（分:秒）").fill("3:28");
-	await panel(page).getByRole("button", { name: "設定自動歸還" }).click();
-	await expect(panel(page).getByText(/騎乘滿 3:28 時會直接歸還/)).toBeVisible();
-	await panel(page).getByRole("button", { name: "確認設定" }).click();
+	await panel(page).getByLabel("時長（分:秒）").press("Enter");
 	await expect(panel(page).getByText(/騎乘滿 3:28 時自動歸還 · 還有/)).toBeVisible();
-	expect(api.requests.find(request => request.method === "PUT")?.body).toEqual({ action: "return", afterRideSeconds: 208 });
+	expect(api.requests.filter(request => request.method === "PUT").map(request => request.body)).toEqual([
+		{ action: "return", afterRideSeconds: 30 },
+		{ action: "return", afterRideSeconds: 208 }
+	]);
 	await page.screenshot({ path: test.info().outputPath("ride.png") });
+	await panel(page)
+		.getByRole("button", { name: /自動歸還/ })
+		.click();
+	await expect(panel(page).getByText(/時自動歸還 · 還有/)).toHaveCount(0);
+	expect(api.rideAutomation).toBeNull();
 
+	// Return goes straight to checkout with the blank photo already attached.
 	await panel(page).getByRole("button", { name: "歸還車輛" }).click();
-	await panel(page).getByRole("button", { name: "確認歸還" }).click();
 	await expect(page).toHaveURL(/view=checkout/);
 	await expect(panel(page).locator(".bill-total")).toHaveText("$9");
-	await expect(panel(page).getByRole("button", { name: "付款 $9" })).toBeDisabled();
 	await expect(panel(page).getByText(/停止計費 · 還在工程三館/)).toBeVisible();
-	await panel(page).getByRole("button", { name: "上傳空白照片（1×1 PNG）" }).click();
-	await expect(panel(page).getByText("已上傳空白照片，點此改拍")).toBeVisible();
+	await expect(panel(page).getByRole("heading", { name: "還車照片（可選）" })).toBeVisible();
+	await expect(panel(page).getByText("已附上空白照片，點此改拍")).toBeVisible();
+	await expect(panel(page).getByRole("button", { name: "付款 $9" })).toBeEnabled();
 	await panel(page).getByLabel("拍攝還車照片").setInputFiles(samplePhoto);
 	await expect(panel(page).getByText("已上傳，點此重拍")).toBeVisible();
+	await expect(panel(page).getByRole("button", { name: "改用空白照片" })).toBeVisible();
 	await page.screenshot({ path: test.info().outputPath("checkout.png") });
 	await panel(page).getByRole("button", { name: "付款 $9" }).click();
 	await expect(panel(page).getByRole("heading", { name: "已完成付款" })).toBeVisible();
 	expect(api.photoUploads).toBe(2);
 	expect(api.checkout).toEqual({ imageId: 777, cardId: 154060, useOlooCoin: true });
+	expect(errors.filter(error => !error.includes("401"))).toEqual([]);
+});
+
+test("account shows ride history and the plans this campus offers", async ({ page }) => {
+	const { errors } = await open(page, "/?view=account");
+	await panel(page).getByRole("button", { name: "騎乘紀錄" }).click();
+	await expect(page).toHaveURL(/view=history/);
+	await expect(panel(page).getByText("JZ-401")).toBeVisible();
+	await expect(panel(page).getByText(/騎乘 1 分 \+ 臨停 1 分（發動 00:52、熄火 00:02）/)).toBeVisible();
+	await expect(panel(page).getByText("浩然圖書館 → 工程三館")).toBeVisible();
+	await page.goBack();
+	await panel(page).getByRole("button", { name: "訂閱方案" }).click();
+	await expect(page).toHaveURL(/view=plans/);
+	await expect(panel(page).getByText(/剩 0 \/ 60 分/)).toBeVisible();
+	await expect(panel(page).locator(".plan-card").filter({ hasText: "月用量 Plus" }).getByText("可以訂閱")).toBeVisible();
+	await expect(panel(page).locator(".plan-card").filter({ hasText: "悠遊券" }).getByText("不能訂閱：已停售")).toBeVisible();
+	await page.screenshot({ path: test.info().outputPath("plans.png") });
 	expect(errors.filter(error => !error.includes("401"))).toEqual([]);
 });

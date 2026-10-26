@@ -326,11 +326,6 @@ code {
 	background: var(--surface-3);
 }
 
-.button-danger {
-	background: var(--danger);
-	color: #fff;
-}
-
 .button-block {
 	width: 100%;
 }
@@ -1140,21 +1135,6 @@ code {
 	background: var(--surface-solid);
 }
 
-.confirm-card {
-	display: flex;
-	flex-direction: column;
-	gap: 12px;
-	padding: 14px;
-	border-radius: var(--radius);
-	background: var(--low-soft);
-	animation: rise 0.25s var(--ease) both;
-}
-
-.confirm-card p {
-	font-size: 14px;
-	line-height: 1.5;
-}
-
 @keyframes rise {
 	from {
 		opacity: 0;
@@ -1165,47 +1145,6 @@ code {
 .inline-error {
 	color: var(--danger);
 	font-size: 13px;
-}
-
-.disclosure {
-	border-radius: var(--radius);
-	background: var(--surface-2);
-}
-
-.disclosure summary {
-	display: flex;
-	align-items: center;
-	gap: 8px;
-	padding: 13px 14px;
-	font-size: 14px;
-	font-weight: 500;
-	cursor: pointer;
-	list-style: none;
-}
-
-.disclosure summary::-webkit-details-marker {
-	display: none;
-}
-
-.disclosure summary span {
-	flex: 1;
-	text-align: right;
-	color: var(--ink-2);
-	font-size: 12.5px;
-	font-weight: 400;
-}
-
-.disclosure summary svg {
-	color: var(--ink-3);
-	transition: transform 0.2s var(--ease);
-}
-
-.disclosure[open] summary svg {
-	transform: rotate(180deg);
-}
-
-.disclosure > :not(summary) {
-	margin: 0 14px 12px;
 }
 
 /* ---------- ride ---------- */
@@ -1241,6 +1180,10 @@ code {
 		background 0.15s;
 }
 
+.choice-grid button:disabled {
+	opacity: 0.55;
+}
+
 .choice-grid button strong {
 	font-size: 13.5px;
 	font-weight: 600;
@@ -1251,7 +1194,7 @@ code {
 	font-size: 12px;
 }
 
-.choice-grid button[aria-checked="true"] {
+.choice-grid button[aria-pressed="true"] {
 	border-color: var(--ink);
 	background: var(--surface-2);
 }
@@ -1725,6 +1668,12 @@ code {
 	grid-template-columns: repeat(2, 1fr);
 }
 
+.timer-control {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+}
+
 .duration-picker {
 	display: flex;
 	flex-direction: column;
@@ -1988,4 +1937,172 @@ code {
 .plate-form input {
 	font-family: var(--font-mono);
 	letter-spacing: 0.04em;
+}
+
+/* ---------- account: history and plans ---------- */
+
+.menu-list {
+	display: flex;
+	flex-direction: column;
+	border-radius: var(--radius);
+	background: var(--surface-2);
+	overflow: hidden;
+}
+
+.menu-row {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	padding: 13px 14px;
+	font-size: 14.5px;
+	text-align: left;
+	transition: background 0.15s;
+}
+
+.menu-row span {
+	flex: 1;
+}
+
+.menu-row svg:last-child {
+	color: var(--ink-3);
+}
+
+.menu-row:hover {
+	background: var(--surface-3);
+}
+
+.menu-row + .menu-row {
+	box-shadow: 0 -1px 0 var(--line);
+}
+
+.history-list,
+.plan-list {
+	display: flex;
+	flex-direction: column;
+}
+
+.history-row {
+	display: flex;
+	align-items: flex-start;
+	gap: 12px;
+	padding: 11px 0;
+}
+
+.history-row + .history-row {
+	box-shadow: 0 -1px 0 var(--line);
+}
+
+.history-row-main {
+	flex: 1;
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+
+.history-row-main strong {
+	display: flex;
+	align-items: baseline;
+	gap: 8px;
+	font-size: 14.5px;
+	font-weight: 500;
+}
+
+.history-row-main strong span:last-child,
+.history-row-main > span {
+	color: var(--ink-2);
+	font-size: 12.5px;
+	font-weight: 400;
+	font-variant-numeric: tabular-nums;
+}
+
+.history-row-cost {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-end;
+	gap: 4px;
+	font: 600 15px/1.2 var(--font-display);
+	font-variant-numeric: tabular-nums;
+}
+
+.plan-list {
+	gap: 10px;
+}
+
+.plan-current {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 12px;
+	font-size: 16px;
+}
+
+.plan-current span {
+	font: 600 18px/1 var(--font-display);
+	font-variant-numeric: tabular-nums;
+}
+
+.plan-card {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	padding: 14px;
+	border-radius: var(--radius);
+	border: 1px solid var(--line-strong);
+}
+
+.plan-card[data-current="true"] {
+	border-color: var(--brand);
+	background: var(--brand-soft);
+}
+
+.plan-card-head {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 12px;
+}
+
+.plan-card-head div {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+
+.plan-card-head strong {
+	font-size: 15px;
+	font-weight: 600;
+}
+
+.plan-card-head span {
+	color: var(--ink-2);
+	font-size: 12.5px;
+}
+
+.plan-price {
+	font: 600 18px/1 var(--font-display);
+	font-variant-numeric: tabular-nums;
+}
+
+.plan-lines {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	padding-left: 16px;
+	list-style: disc;
+	color: var(--ink-2);
+	font-size: 12.5px;
+}
+
+.plan-status {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	color: var(--ink-2);
+	font-size: 12.5px;
+	font-weight: 500;
+}
+
+.plan-status[data-ok="true"] {
+	color: var(--available-ink);
 }

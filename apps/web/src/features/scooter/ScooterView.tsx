@@ -1,20 +1,19 @@
-import { ArrowLeft, CaretDown, Lightning, X } from "@phosphor-icons/react";
+import { ArrowLeft, Lightning, X } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useUiStore } from "../../app/useUiStore";
 import { apiRequest, idempotencyKey } from "../../shared/api";
-import { clock, durationLabel, relativeTime } from "../../shared/format";
+import { clock, durationLabel, relativeTime, timeOfDay } from "../../shared/format";
 import { useIsSignedIn } from "../auth/useSession";
 import { availabilityLabel, modelLabel, reasonLabels, stationLabel, warningLabel, type ScooterSummary } from "../fleet/model";
 import { useFleetQuery, useStation } from "../fleet/useFleetQuery";
-import { automationLabels, DurationPicker, type AutomationAction } from "../ride/automation";
+import { defaultTimerSeconds, TimerControl, type AutomationAction } from "../ride/automation";
+import { useReservation, type ReservationUsage } from "../ride/useReservation";
 import { useCurrentRide, useNow } from "../ride/useCurrentRide";
 import { useUnpaidRide } from "../ride/useUnpaidRide";
 
 type RidePlan = { id?: number; name?: string; minMinute?: number; minPrice?: number; normalRate?: number; stopRate?: number };
 type RidePlanResponse = { possibleRidePlan?: { ridePlan?: RidePlan }; basicOrStationRidePlan?: RidePlan; basicRidePlan?: RidePlan };
-type Reservation = { id: number; scooterId?: number; label?: string; createdAt?: string; expiresAt?: string };
-type ReservationUsage = { reservedLastHour: number; cancelledThisWeek: number };
 
 export function ScooterView({ stationId, scooterId }: { stationId: number; scooterId: number }) {
 	const fleet = useFleetQuery();
@@ -100,9 +99,7 @@ function BorrowActions({ scooter }: { scooter: ScooterSummary }) {
 	const now = useNow();
 	const activeRide = useCurrentRide().data ?? null;
 	const unpaidRide = useUnpaidRide().data ?? null;
-	const [confirming, setConfirming] = useState(false);
-	const [automation, setAutomation] = useState<"none" | AutomationAction>("none");
-	const [rideTimer, setRideTimer] = useState(88);
+	const [timer, setTimer] = useState<{ action: AutomationAction | null; seconds: number }>({ action: null, seconds: defaultTimerSeconds });
 
 	const plan = useQuery({
 		queryKey: ["scooter", scooter.providerId, "ride-plan"],
@@ -110,17 +107,9 @@ function BorrowActions({ scooter }: { scooter: ScooterSummary }) {
 		select: data => data.possibleRidePlan?.ridePlan ?? data.basicOrStationRidePlan ?? data.basicRidePlan ?? null,
 		retry: false
 	});
-	const reservations = useQuery({
-		queryKey: ["reservation", "current"],
-		queryFn: () => apiRequest<Reservation[]>("/v1/reservations/current"),
-		refetchInterval: 15_000,
-		retry: false
-	});
+	const reservation = useReservation();
 	const usage = useQuery({ queryKey: ["reservation", "usage"], queryFn: () => apiRequest<ReservationUsage>("/v1/reservations/usage"), retry: false });
-	const reservation = reservations.data?.[0] ?? null;
-	const reservationLeft = reservation?.expiresAt ? (Date.parse(reservation.expiresAt) - now) / 1000 : null;
-	const reservationLive = reservation != null && (reservationLeft == null || reservationLeft > 0);
-	const ownReservation = reservationLive && (reservation.scooterId === scooter.providerId || reservation.label === scooter.id) ? reservation : null;
+	const ownReservation = reservation && (reservation.scooterId === scooter.providerId || reservation.label === scooter.id) ? reservation : null;
 	const refreshAfterChange = () => Promise.all(["ride", "fleet", "reservation"].map(key => queryClient.invalidateQueries({ queryKey: [key] })));
 
 	const rent = useMutation({
@@ -131,7 +120,7 @@ function BorrowActions({ scooter }: { scooter: ScooterSummary }) {
 				body: JSON.stringify({
 					scooterId: scooter.providerId,
 					reservationId: ownReservation?.id ?? null,
-					automation: automation === "none" ? undefined : { action: automation, afterRideSeconds: rideTimer }
+					automation: timer.action ? { action: timer.action, afterRideSeconds: timer.seconds } : undefined
 				})
 			}),
 		onSuccess: async () => {
@@ -153,7 +142,7 @@ function BorrowActions({ scooter }: { scooter: ScooterSummary }) {
 			<div className="cta-card">
 				<div>
 					<strong>上一趟 {unpaidRide.label} 還沒結帳</strong>
-					<span>完成還車照片與付款後才能再借</span>
+					<span>付款後才能再借</span>
 				</div>
 				<button type="button" className="button button-primary" onClick={() => navigate({ kind: "checkout" })}>
 					去結帳
@@ -177,12 +166,7 @@ function BorrowActions({ scooter }: { scooter: ScooterSummary }) {
 	}
 
 	const borrowable = scooter.availability === "available" || (ownReservation != null && scooter.reasons.every(reason => reason === "reserved"));
-	const consequence =
-		automation === "return"
-			? `，騎乘滿 ${durationLabel(rideTimer)} 時自動歸還`
-			: automation === "return_and_reborrow"
-				? `，騎乘滿 ${durationLabel(rideTimer)} 時歸還、以空白照片自動結帳後重借（開始下一段計費）`
-				: "";
+	const quotaUsed = usage.data != null && usage.data.remaining <= 0;
 
 	return (
 		<>
@@ -199,65 +183,46 @@ function BorrowActions({ scooter }: { scooter: ScooterSummary }) {
 				)}
 			</div>
 
-			{reservationLive ? (
+			{reservation ? (
 				<div className="status-card" data-state="scheduled">
 					<div>
 						<strong>{ownReservation ? "已預約這台車" : `已預約 ${reservation.label ?? `車輛 ${reservation.scooterId ?? ""}`}`}</strong>
-						<span>{reservationLeft != null ? `取車時間剩 ${clock(reservationLeft)}` : "預約中"}</span>
+						<span>{reservation.expiresAt ? `取車時間剩 ${clock((Date.parse(reservation.expiresAt) - now) / 1000)}，逾時自動取消` : "預約中"}</span>
 					</div>
-					<button type="button" className="icon-button" aria-label="取消預約" onClick={() => cancelReservation.mutate(reservation.id)} disabled={cancelReservation.isPending}>
+					<button type="button" className="icon-button" aria-label="取消預約" onClick={() => reservation.id != null && cancelReservation.mutate(reservation.id)} disabled={cancelReservation.isPending}>
 						<X size={16} weight="bold" />
 					</button>
 				</div>
 			) : null}
 
-			{confirming ? (
-				<div className="confirm-card" role="alertdialog" aria-label="確認借用">
-					<p>
-						借用 <strong>{scooter.id}</strong> 會立即開始計費{consequence}。
-					</p>
-					<div className="button-pair">
-						<button type="button" className="button button-quiet" onClick={() => setConfirming(false)}>
-							取消
-						</button>
-						<button type="button" className="button button-primary" onClick={() => rent.mutate()} disabled={rent.isPending}>
-							{rent.isPending ? "借用中…" : "確認借用"}
-						</button>
-					</div>
-				</div>
-			) : (
-				<div className="button-pair">
-					<button type="button" className="button button-primary" disabled={!borrowable || plan.isPending} onClick={() => setConfirming(true)}>
-						{ownReservation ? "借用預約的車" : "立即借用"}
-					</button>
-					<button type="button" className="button button-quiet" disabled={reservationLive || reserve.isPending || scooter.availability !== "available"} onClick={() => reserve.mutate()}>
-						{reserve.isPending ? "預約中…" : "預約 5 分鐘"}
-					</button>
-				</div>
-			)}
+			<div className="button-pair">
+				<button type="button" className="button button-primary" disabled={!borrowable || plan.isPending || rent.isPending} onClick={() => rent.mutate()}>
+					{rent.isPending ? "借用中…" : ownReservation ? "借用預約的車" : "立即借用"}
+				</button>
+				<button type="button" className="button button-quiet" disabled={reservation != null || reserve.isPending || quotaUsed || scooter.availability !== "available"} onClick={() => reserve.mutate()}>
+					{reserve.isPending ? "預約中…" : "預約 5 分鐘"}
+				</button>
+			</div>
 			{rent.error ? <p className="inline-error">借用失敗：{rent.error.message}</p> : null}
 			{reserve.error || cancelReservation.error ? <p className="inline-error">預約操作失敗：{(reserve.error ?? cancelReservation.error)?.message}</p> : null}
 			{usage.data ? (
 				<p className="muted small">
-					透過 olowo：最近一小時預約 {usage.data.reservedLastHour} 次、本週取消 {usage.data.cancelledThisWeek} 次。oloo 會限制每小時的預約次數，一週內多次取消會暫停預約。
+					{quotaUsed
+						? `這一小時已預約 ${usage.data.reservedLastHour} 次${usage.data.nextSlotAt ? `，${timeOfDay(usage.data.nextSlotAt)} 後可再預約` : ""}。`
+						: `這一小時還可預約 ${usage.data.remaining} 次。`}
+					oloo 規定一小時內最多預約 {usage.data.limitPerHour} 次、每次保留 5 分鐘；取消太頻繁也會被擋（App 訊息：「本週已達2天取消預約超過2次」）。
 				</p>
 			) : null}
 
-			<details className="disclosure">
-				<summary>
-					借用後計時 <span>{automation === "none" ? "未設定" : `${automationLabels[automation]} · ${durationLabel(rideTimer)}`}</span>
-					<CaretDown size={14} weight="bold" aria-hidden />
-				</summary>
-				<div className="segmented" role="radiogroup" aria-label="借用後計時動作">
-					{(["none", "return", "return_and_reborrow"] as const).map(choice => (
-						<button key={choice} type="button" role="radio" aria-checked={automation === choice} onClick={() => (setAutomation(choice), setConfirming(false))}>
-							{choice === "none" ? "不設定" : automationLabels[choice]}
-						</button>
-					))}
-				</div>
-				{automation !== "none" ? <DurationPicker value={rideTimer} onChange={seconds => (setRideTimer(seconds), setConfirming(false))} /> : null}
-				<p className="muted small">由伺服器計時，關掉網頁也會執行。歸還前會再次確認騎乘中的是同一台車。</p>
-			</details>
+			<section className="section">
+				<h3 className="section-title">借用後計時</h3>
+				<TimerControl action={timer.action} seconds={timer.seconds} onChange={setTimer} />
+				<p className="muted small">
+					{timer.action
+						? `借用後騎滿 ${durationLabel(timer.seconds)} 時${timer.action === "return" ? "自動歸還" : "歸還、以空白照片結帳並重借同一台"}，由伺服器執行。`
+						: "點選後借車時一起設定，借用後也能在騎乘頁修改。"}
+				</p>
+			</section>
 		</>
 	);
 }

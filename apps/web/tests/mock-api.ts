@@ -194,17 +194,105 @@ export async function mockOlowoApi(page: Page, options: { authenticated?: boolea
 				case "GET /v1/reservations/current":
 					return json(state.reservation ? [state.reservation] : []);
 				case "GET /v1/reservations/usage":
-					return json({ reservedLastHour: state.reservation ? 1 : 0, cancelledThisWeek: 0 });
+					return json({ limitPerHour: 2, reservedLastHour: state.reservation ? 1 : 0, cancelledLastHour: 0, remaining: state.reservation ? 1 : 2, nextSlotAt: null });
 				case "POST /v1/reservations":
 					state.reservation = { id: 55, scooterId: 1512, label: "JZ-333", createdAt: now(), expiresAt: new Date(Date.now() + 300_000).toISOString() };
 					return json({ success: true, reservationId: 55, expiresAt: state.reservation.expiresAt });
 				case "DELETE /v1/reservations/55":
 					state.reservation = null;
 					return json({ success: true });
-				case "POST /v1/rides":
+				case "POST /v1/rides": {
 					state.reservation = null;
 					state.activeRide = { id: 9123, scooterId: 1512, label: "JZ-333", startedAt: now(), cost: 0 };
-					return json({ success: true, activeRide: state.activeRide });
+					const automation = (body as { automation?: { action: string; afterRideSeconds: number } }).automation;
+					state.rideAutomation = automation
+						? { id: "ride-task", rideId: 9123, scooterId: 1512, action: automation.action, triggerAt: new Date(Date.now() + automation.afterRideSeconds * 1000).toISOString(), state: "scheduled" }
+						: null;
+					return json({ success: true, activeRide: state.activeRide, automation: state.rideAutomation });
+				}
+				case "GET /v1/rides/history":
+					return json({
+						rides: [
+							{
+								id: 3172502,
+								label: "JZ-401",
+								startedAt: "2026-09-22T11:56:00.000Z",
+								endedAt: "2026-09-22T11:56:55.000Z",
+								durationSeconds: 55,
+								cost: 3,
+								ridingMinutes: 1,
+								parkedMinutes: 1,
+								engineOnSeconds: 52.7,
+								engineOffSeconds: 2.1,
+								paid: true,
+								planName: "月用量 Starter",
+								startStation: "交大-浩然圖書館站",
+								endStation: "交大-工程三館站"
+							}
+						]
+					});
+				case "GET /v1/plans":
+					return json({
+						region: url.searchParams.get("region"),
+						current: {
+							name: "月用量 Starter",
+							startsAt: "2026-10-01T18:37:34.000Z",
+							endsAt: "2026-11-01T15:59:59.000Z",
+							includedMinutes: 60,
+							remainingMinutes: 0,
+							ratePerMinute: 2.4,
+							autoRenew: true,
+							nextPlanName: "月用量 Starter",
+							topUps: [{ minutes: 15, price: 33, tag: null }]
+						},
+						plans: [
+							{
+								contractId: 49,
+								name: "月用量 Starter",
+								tagline: "新·初心者",
+								kind: "monthly",
+								price: 120,
+								includedMinutes: 60,
+								periodDays: 30,
+								ratePerMinute: 2.4,
+								lines: ["每個月 60 分鐘免費"],
+								current: true,
+								next: true,
+								canPurchase: true,
+								reasons: []
+							},
+							{
+								contractId: 51,
+								name: "月用量 Plus",
+								tagline: null,
+								kind: "monthly",
+								price: 599,
+								includedMinutes: 500,
+								periodDays: 30,
+								ratePerMinute: 2.4,
+								lines: ["每個月 500 分鐘免費"],
+								current: false,
+								next: false,
+								canPurchase: true,
+								reasons: []
+							},
+							{
+								contractId: 61,
+								name: "遊客 3 小時悠遊券",
+								tagline: null,
+								kind: "pass",
+								price: 289,
+								includedMinutes: 180,
+								periodDays: 0.125,
+								ratePerMinute: 1,
+								lines: ["3 小時內 讓你自由借還"],
+								current: false,
+								next: false,
+								canPurchase: false,
+								reasons: ["已停售"]
+							}
+						]
+					});
 				case "GET /v1/rides/9123/estimate":
 					return json({ estimate: { cost: 4, ridingMinutes: 1, parkedMinutes: 0, ratePerMinute: 2.4 } });
 				case "GET /v1/rides/9123/automation":

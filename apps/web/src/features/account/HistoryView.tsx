@@ -1,27 +1,9 @@
 import { ArrowLeft } from "@phosphor-icons/react";
-import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { useUiStore } from "../../app/useUiStore";
-import { apiRequest } from "../../shared/api";
 import { clock, timeOfDay } from "../../shared/format";
 import { stationLabel } from "../fleet/model";
-
-interface RideRecord {
-	id: number;
-	label: string | null;
-	startedAt: string;
-	endedAt: string | null;
-	durationSeconds: number | null;
-	cost: number | null;
-	ridingMinutes: number;
-	parkedMinutes: number;
-	engineOnSeconds: number;
-	engineOffSeconds: number;
-	paid: boolean;
-	planName: string | null;
-	startStation: string | null;
-	endStation: string | null;
-}
+import { useRideHistory } from "./useRideHistory";
 
 const pageSize = 30;
 
@@ -34,7 +16,7 @@ export function HistoryView() {
 	const back = useUiStore(state => state.back);
 	const navigate = useUiStore(state => state.navigate);
 	const [shown, setShown] = useState(pageSize);
-	const history = useQuery({ queryKey: ["ride", "history"], queryFn: () => apiRequest<{ rides: RideRecord[] }>("/v1/rides/history"), select: data => data.rides });
+	const history = useRideHistory();
 	const month = useMemo(() => {
 		const since = Date.now() - 30 * 86_400_000;
 		const recent = (history.data ?? []).filter(ride => Date.parse(ride.startedAt) > since);
@@ -51,7 +33,10 @@ export function HistoryView() {
 					<h2>騎乘紀錄</h2>
 					{history.data ? (
 						<p>
-							近 30 天 {month.count} 趟 · ${month.spent}
+							近 30 天 {month.count} 趟 · ${month.spent} ·{" "}
+							<a className="text-button" href="/insights" target="_blank" rel="noopener">
+								看騎乘分析
+							</a>
 						</p>
 					) : null}
 				</div>

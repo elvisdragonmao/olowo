@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { mockMapbox, mockOlowoApi, samplePhoto } from "./mock-api";
+import { generatedHistory, mockMapbox, mockOlowoApi, samplePhoto } from "./mock-api";
 
 const realTiles = process.env.OLOWO_REAL_TILES === "1";
 
@@ -301,4 +301,50 @@ test("account credits link to the GitHub repository", async ({ page }) => {
 	await expect(panel(page).getByRole("link", { name: /在 GitHub 給顆/ })).toHaveAttribute("href", "https://github.com/elvisdragonmao/olowo");
 	await expect(panel(page).getByRole("link", { name: /在 GitHub 給顆/ })).toHaveCSS("text-decoration-line", "none");
 	await page.screenshot({ path: test.info().outputPath("account.png") });
+});
+
+test("騎乘分析 opens in its own page and re-slices every chart by the chosen range", async ({ page, context }) => {
+	const errors: string[] = [];
+	page.on("pageerror", error => errors.push(error.message));
+	page.on("console", message => message.type() === "error" && errors.push(message.text()));
+	const history = generatedHistory();
+	await mockMapbox(page);
+	await mockOlowoApi(page, { history });
+	await page.goto("/?view=account");
+	const [insights] = await Promise.all([
+		context.waitForEvent("page"),
+		panel(page)
+			.getByRole("link", { name: /騎乘分析/ })
+			.click()
+	]);
+	await mockOlowoApi(insights, { history });
+	await insights.reload();
+	await expect(insights).toHaveURL(/\/insights\?range=this-month/);
+	await expect(insights.getByRole("heading", { name: "騎乘分析" })).toBeVisible();
+	await expect(insights.locator(".mapboxgl-canvas")).toHaveCount(0);
+
+	await insights.getByRole("radio", { name: "全部" }).click();
+	await expect(insights).toHaveURL(/range=all/);
+	const tiles = insights.getByRole("region", { name: "總覽" });
+	await expect(tiles.getByText(`${history.length} 趟`, { exact: true })).toBeVisible();
+	await expect(insights.getByRole("heading", { name: "每月騎乘" })).toBeVisible();
+	await expect(insights.getByText("浩然圖書館 → 工程三館")).toBeVisible();
+	await expect(insights.getByText(/最常在星期/)).toBeVisible();
+	await insights.getByRole("radio", { name: "花費" }).click();
+	await expect(insights.getByRole("img", { name: "花費趨勢" })).toBeVisible();
+
+	await insights.getByLabel("起點").selectOption("十三舍");
+	await insights.getByLabel("終點").selectOption("小吃部");
+	await expect(insights.getByText(/騎過 \d+ 次/)).toBeVisible();
+
+	await insights.getByRole("radio", { name: "近 30 天" }).click();
+	await expect(insights.getByRole("heading", { name: "每日騎乘" })).toBeVisible();
+	await insights.getByRole("radio", { name: "自訂" }).click();
+	await insights.getByLabel("從").fill("2000-01-01");
+	await expect(insights).toHaveURL(/range=custom&from=2000-01-01/);
+	await expect(tiles.getByText(`${history.length} 趟`, { exact: true })).toBeVisible();
+	const layout = await insights.evaluate(() => ({ width: document.documentElement.clientWidth, scrollWidth: document.documentElement.scrollWidth }));
+	expect(layout.scrollWidth).toBeLessThanOrEqual(layout.width);
+	await insights.screenshot({ path: test.info().outputPath("insights.png"), fullPage: true });
+	expect(errors).toEqual([]);
 });

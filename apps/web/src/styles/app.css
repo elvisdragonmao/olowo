@@ -1962,8 +1962,10 @@ code {
 	align-items: center;
 	gap: 12px;
 	padding: 13px 14px;
+	color: inherit;
 	font-size: 14.5px;
 	text-align: left;
+	text-decoration: none;
 	transition: background 0.15s;
 }
 

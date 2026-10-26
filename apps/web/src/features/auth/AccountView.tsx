@@ -1,4 +1,4 @@
-import { ArrowLeft, CaretRight, ClockCounterClockwise, GithubLogo, Percent, SignOut, Star, Ticket } from "@phosphor-icons/react";
+import { ArrowLeft, ArrowSquareOut, CaretRight, ChartBar, ClockCounterClockwise, GithubLogo, Percent, SignOut, Star, Ticket } from "@phosphor-icons/react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useUiStore } from "../../app/useUiStore";
 import { apiRequest } from "../../shared/api";
@@ -50,6 +50,11 @@ export function AccountView() {
 								<span>騎乘紀錄</span>
 								<CaretRight size={14} weight="bold" aria-hidden />
 							</button>
+							<a className="menu-row" href="/insights" target="_blank" rel="noopener">
+								<ChartBar size={18} weight="bold" aria-hidden />
+								<span>騎乘分析</span>
+								<ArrowSquareOut size={14} weight="bold" aria-label="在新分頁開啟" />
+							</a>
 							<button type="button" className="menu-row" onClick={() => navigate({ kind: "plans" })}>
 								<Ticket size={18} weight="bold" aria-hidden />
 								<span>訂閱方案</span>

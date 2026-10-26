@@ -7,7 +7,7 @@ function seo(origin: string): Plugin {
 		name: "olowo-seo",
 		transformIndexHtml: html => html.replaceAll("%SITE_ORIGIN%", origin),
 		generateBundle() {
-			this.emitFile({ type: "asset", fileName: "robots.txt", source: `User-agent: *\nAllow: /\nDisallow: /v1/\n\nSitemap: ${origin}/sitemap.xml\n` });
+			this.emitFile({ type: "asset", fileName: "robots.txt", source: `User-agent: *\nAllow: /\nDisallow: /v1/\nDisallow: /insights\n\nSitemap: ${origin}/sitemap.xml\n` });
 			this.emitFile({
 				type: "asset",
 				fileName: "sitemap.xml",

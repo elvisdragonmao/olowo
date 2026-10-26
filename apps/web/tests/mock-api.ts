@@ -104,7 +104,45 @@ export async function mockMapbox(page: Page, options: { realTiles?: boolean } = 
 
 type Ride = { id: number; scooterId: number; label: string; startedAt: string; cost: number };
 
-export async function mockOlowoApi(page: Page, options: { authenticated?: boolean } = {}) {
+/** A made-up year of rides relative to now: mostly short campus hops, some free reborrow loops. */
+export function generatedHistory(count = 160) {
+	let seed = 7;
+	const random = () => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646;
+	const stations = ["交大-浩然圖書館站", "交大-工程三館站", "交大-第二餐廳站", "交大-十三舍站", "清大-小吃部站"];
+	const routes: Array<[number, number, number]> = [
+		[0, 1, 240],
+		[1, 0, 260],
+		[2, 3, 180],
+		[0, 0, 28],
+		[3, 4, 520]
+	];
+	return Array.from({ length: count }, (_, index) => {
+		const [from, to, typical] = routes[Math.floor(random() ** 1.6 * routes.length)]!;
+		const startedAt = new Date(Date.now() - index * 2.2 * 86_400_000 - random() * 40_000_000);
+		startedAt.setHours(8 + Math.floor(random() * 14));
+		const seconds = Math.round(typical * (0.7 + random() * 0.8));
+		const minutes = Math.ceil(seconds / 60);
+		const cost = seconds < 30 ? 0 : Math.round(minutes * 2.4);
+		return {
+			id: 4_000_000 - index,
+			label: `JZ-${300 + Math.floor(random() * 6)}`,
+			startedAt: startedAt.toISOString(),
+			endedAt: new Date(startedAt.getTime() + seconds * 1000).toISOString(),
+			durationSeconds: seconds,
+			cost,
+			ridingMinutes: seconds < 30 ? 0 : minutes,
+			parkedMinutes: seconds < 30 ? 0 : 1,
+			engineOnSeconds: seconds - 2,
+			engineOffSeconds: 2,
+			paid: true,
+			planName: "月用量 Starter",
+			startStation: stations[from]!,
+			endStation: stations[to]!
+		};
+	});
+}
+
+export async function mockOlowoApi(page: Page, options: { authenticated?: boolean; history?: unknown[] } = {}) {
 	const state = {
 		authenticated: options.authenticated ?? true,
 		activeRide: null as Ride | null,
@@ -264,6 +302,7 @@ export async function mockOlowoApi(page: Page, options: { authenticated?: boolea
 					return json({ success: true });
 				}
 				case "GET /v1/rides/history":
+					if (options.history) return json({ rides: options.history });
 					return json({
 						rides: [
 							{

@@ -210,7 +210,7 @@ function BorrowActions({ scooter }: { scooter: ScooterSummary }) {
 					{quotaUsed
 						? `這一小時已預約 ${usage.data.reservedLastHour} 次${usage.data.nextSlotAt ? `，${timeOfDay(usage.data.nextSlotAt)} 後可再預約` : ""}。`
 						: `這一小時還可預約 ${usage.data.remaining} 次。`}
-					oloo 規定一小時內最多預約 {usage.data.limitPerHour} 次、每次保留 5 分鐘；取消太頻繁也會被擋（App 訊息：「本週已達2天取消預約超過2次」）。
+					每小時最多 {usage.data.limitPerHour} 次，常取消會被暫停預約。
 				</p>
 			) : null}
 

@@ -28,6 +28,7 @@ const providerLog: string[] = [];
 let billLocation: string | null = null;
 let estimateEndedAt: string | null = null;
 let reservation: Record<string, unknown> | null = null;
+const purchases: Array<{ path: string; body: string }> = [];
 
 function json(response: ServerResponse, value: unknown, status = 200) {
 	response.writeHead(status, { "content-type": "application/json" });
@@ -218,6 +219,33 @@ async function providerHandler(request: IncomingMessage, response: ServerRespons
 			},
 			nextActivateRidePlan: { id: 53, name: "月用量 Starter" }
 		});
+	if (path === "/contracts/estimate-purchase/49")
+		return json(response, {
+			success: true,
+			result: {
+				contractId: 49,
+				details: JSON.stringify({ startTime: "2026-11-01 15:59:59Z", endTime: "2026-12-01 15:59:59Z", activateDatas: [{ amount: 120, ridePlanTitle: "新·初心者" }] })
+			}
+		});
+	if (path === "/contracts/purchase-with-creditcard/49" || path === "/user-contracts/top-up-with-creditcard/53393/1") {
+		purchases.push({ path, body: await readBody(request) });
+		return json(response, { success: true });
+	}
+	if (path === "/user-contracts/estimate-top-up/53393/1") return json(response, { topUpItem: { id: 1, minutes: 15, price: 33 }, estimatedResult: { minutes: 15, price: 33 } });
+	if (path === "/user-coupons/self")
+		return json(response, [{ id: 34781, accountId: 115827, couponId: 116, isApplied: false, usableStart: "2026-10-01T00:00:00.000Z", usableEnd: "2099-01-01T00:00:00.000Z", code: "private-code" }]);
+	if (path === "/coupons")
+		return json(response, [
+			{
+				id: 116,
+				name: "小小心意券",
+				description: "購買方案金額 9 折優惠",
+				attributes: JSON.stringify({ information: "限購買方案" }),
+				usableConditions: JSON.stringify([[{ forContractPurchase: true }]])
+			}
+		]);
+	if (path.startsWith("/coupons/detect-code-type/")) return json(response, { isCoupon: path.endsWith("/OLOWO10"), isUserCoupon: false });
+	if (path === "/coupons/acquire-by-code/OLOWO10") return json(response, { success: true });
 	if (path.startsWith("/contracts/can-purchase/")) return json(response, path.endsWith("/60") ? { canPurchase: false, reasons: ["ACTIVE_CONTRACT"] } : { canPurchase: true, reasons: [] });
 	if (path === "/scooters-infos/new-rent") {
 		activeRide = {
@@ -427,7 +455,47 @@ test("Fastify completes the authenticated ride and reservation workflow", async 
 		],
 		"disabled contracts are hidden and each plan carries oloo's own purchase check"
 	);
-	assert.deepEqual([catalog.current.name, catalog.current.remainingMinutes, catalog.current.autoRenew, catalog.current.topUps], ["月用量 Starter", 12, true, [{ minutes: 15, price: 33, tag: null }]]);
+	assert.deepEqual(
+		[catalog.current.userContractId, catalog.current.name, catalog.current.remainingMinutes, catalog.current.autoRenew, catalog.current.topUps],
+		[53393, "月用量 Starter", 12, true, [{ id: 1, minutes: 15, price: 33, tag: null }]]
+	);
+
+	const estimate = await (await api("/v1/plans/49/estimate", { method: "POST", body: JSON.stringify({ userCouponId: 34781 }) })).json();
+	assert.deepEqual(estimate, { contractId: 49, amount: 120, title: "新·初心者", startsAt: "2026-11-01T15:59:59.000Z", endsAt: "2026-12-01T15:59:59.000Z" });
+	response = await api("/v1/plans/52/purchase", { method: "POST", headers: { "idempotency-key": "hidden-plan-key" }, body: JSON.stringify({}) });
+	assert.equal(response.status, 404, "contracts no region offers (staff and campaign plans) are not sold");
+	for (let attempt = 0; attempt < 2; attempt += 1) {
+		response = await api("/v1/plans/49/purchase", { method: "POST", headers: { "idempotency-key": "purchase-key" }, body: JSON.stringify({ userCouponId: 34781 }) });
+		assert.equal(response.status, 200);
+	}
+	assert.deepEqual(await (await api("/v1/plans/current/top-ups/1/estimate", { method: "POST", body: JSON.stringify({}) })).json(), { topUpId: 1, minutes: 15, amount: 33 });
+	response = await api("/v1/plans/current/top-ups/1/purchase", { method: "POST", headers: { "idempotency-key": "top-up-key" }, body: JSON.stringify({}) });
+	assert.equal(response.status, 200);
+	assert.deepEqual(
+		purchases,
+		[
+			{ path: "/contracts/purchase-with-creditcard/49", body: JSON.stringify({ userCouponId: 34781 }) },
+			{ path: "/user-contracts/top-up-with-creditcard/53393/1", body: "{}" }
+		],
+		"a replayed idempotency key does not buy twice"
+	);
+
+	const { coupons } = (await (await api("/v1/coupons")).json()) as { coupons: Array<Record<string, unknown>> };
+	assert.deepEqual(coupons, [
+		{
+			id: 34781,
+			name: "小小心意券",
+			description: "購買方案金額 9 折優惠",
+			information: "限購買方案",
+			scope: "plan",
+			startsAt: "2026-10-01T00:00:00.000Z",
+			endsAt: "2099-01-01T00:00:00.000Z",
+			usedAt: null,
+			state: "usable"
+		}
+	]);
+	assert.equal((await api("/v1/coupons/redeem", { method: "POST", body: JSON.stringify({ code: "OLOWO10" }) })).status, 200);
+	assert.equal((await api("/v1/coupons/redeem", { method: "POST", body: JSON.stringify({ code: "NOPE" }) })).status, 404);
 
 	revokeRides = true;
 	response = await api("/v1/rides/current");

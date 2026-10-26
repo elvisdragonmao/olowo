@@ -11,8 +11,9 @@ import type { FleetSnapshot } from "./fleet.js";
 import { toRideHistory } from "./history.js";
 import { IdempotencyStore } from "./idempotency.js";
 import { olooRequest, OlooUpstreamError, resolveProviderScooter } from "./oloo.js";
+import { fetchCoupons, redeemCoupon } from "./coupons.js";
 import { buildFleetSnapshot, FleetCache, reservedScooterIds, type RawFleet } from "./oloo-fleet.js";
-import { fetchPlanCatalog } from "./plans.js";
+import { cancelAutoRenew, estimatePlan, estimateTopUp, fetchPlanCatalog, purchasePlan, purchaseTopUp, setNextPlan } from "./plans.js";
 import { reservationUsage, toPublicReservation } from "./reservations.js";
 import { publicAutomation, RideAutomationStore } from "./ride-automation.js";
 import { ScheduledActionRepository, type StoredScheduledAction } from "./scheduled-action-repository.js";
@@ -563,6 +564,80 @@ app.get("/v1/plans", async (request, reply) => {
 		})
 		.parse(request.query);
 	return reply.send(await fetchPlanCatalog(environment.OLOO_API_BASE_URL, session.accessToken, region ?? null));
+});
+
+const couponChoice = z.object({ userCouponId: z.number().int().positive().nullish() });
+const contractParams = z.object({ contractId: z.coerce.number().int().positive() });
+const topUpParams = z.object({ topUpId: z.coerce.number().int().positive() });
+
+app.post("/v1/plans/:contractId/estimate", async (request, reply) => {
+	const session = await getSession(request, reply);
+	if (!session) return reply.code(401).send({ code: "AUTH_REQUIRED", message: "Please sign in" });
+	const { contractId } = contractParams.parse(request.params);
+	const { userCouponId } = couponChoice.parse(request.body ?? {});
+	return reply.send(await estimatePlan(environment.OLOO_API_BASE_URL, session.accessToken, contractId, userCouponId ?? null));
+});
+
+// Charges the rider's selected card in oloo.
+app.post("/v1/plans/:contractId/purchase", async (request, reply) => {
+	const session = await getSession(request, reply);
+	if (!session) return reply.code(401).send({ code: "AUTH_REQUIRED", message: "Please sign in" });
+	const key = z.string().min(8).parse(request.headers["idempotency-key"]);
+	const { contractId } = contractParams.parse(request.params);
+	const { userCouponId } = couponChoice.parse(request.body ?? {});
+	const result = await idempotency.run(session.userId, `purchase-plan:${contractId}`, key, () => purchasePlan(environment.OLOO_API_BASE_URL, session.accessToken, contractId, userCouponId ?? null));
+	return reply.send(result);
+});
+
+app.post("/v1/plans/current/top-ups/:topUpId/estimate", async (request, reply) => {
+	const session = await getSession(request, reply);
+	if (!session) return reply.code(401).send({ code: "AUTH_REQUIRED", message: "Please sign in" });
+	const { topUpId } = topUpParams.parse(request.params);
+	const { userCouponId } = couponChoice.parse(request.body ?? {});
+	return reply.send(await estimateTopUp(environment.OLOO_API_BASE_URL, session.accessToken, topUpId, userCouponId ?? null));
+});
+
+app.post("/v1/plans/current/top-ups/:topUpId/purchase", async (request, reply) => {
+	const session = await getSession(request, reply);
+	if (!session) return reply.code(401).send({ code: "AUTH_REQUIRED", message: "Please sign in" });
+	const key = z.string().min(8).parse(request.headers["idempotency-key"]);
+	const { topUpId } = topUpParams.parse(request.params);
+	const { userCouponId } = couponChoice.parse(request.body ?? {});
+	const result = await idempotency.run(session.userId, `top-up:${topUpId}`, key, () => purchaseTopUp(environment.OLOO_API_BASE_URL, session.accessToken, topUpId, userCouponId ?? null));
+	return reply.send(result);
+});
+
+app.delete("/v1/plans/current/auto-renew", async (request, reply) => {
+	const session = await getSession(request, reply);
+	if (!session) return reply.code(401).send({ code: "AUTH_REQUIRED", message: "Please sign in" });
+	return reply.send(await cancelAutoRenew(environment.OLOO_API_BASE_URL, session.accessToken));
+});
+
+app.put("/v1/plans/current/next", async (request, reply) => {
+	const session = await getSession(request, reply);
+	if (!session) return reply.code(401).send({ code: "AUTH_REQUIRED", message: "Please sign in" });
+	const { contractId } = z.object({ contractId: z.number().int().positive() }).parse(request.body);
+	return reply.send(await setNextPlan(environment.OLOO_API_BASE_URL, session.accessToken, contractId));
+});
+
+app.get("/v1/coupons", async (request, reply) => {
+	const session = await getSession(request, reply);
+	if (!session) return reply.code(401).send({ code: "AUTH_REQUIRED", message: "Please sign in" });
+	return reply.send({ coupons: await fetchCoupons(environment.OLOO_API_BASE_URL, session.accessToken) });
+});
+
+app.post("/v1/coupons/redeem", async (request, reply) => {
+	const session = await getSession(request, reply);
+	if (!session) return reply.code(401).send({ code: "AUTH_REQUIRED", message: "Please sign in" });
+	const { code } = z
+		.object({
+			code: z
+				.string()
+				.trim()
+				.regex(/^[A-Za-z0-9_-]{2,40}$/)
+		})
+		.parse(request.body);
+	return reply.send(await redeemCoupon(environment.OLOO_API_BASE_URL, session.accessToken, code));
 });
 
 app.get("/v1/auth/session", async (request, reply) => {

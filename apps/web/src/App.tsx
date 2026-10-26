@@ -4,6 +4,8 @@ import { motion } from "motion/react";
 import { lazy, Suspense, useEffect } from "react";
 import { Panel } from "./app/Panel";
 import { installHistorySync, useUiStore, type View } from "./app/useUiStore";
+import { HistoryView } from "./features/account/HistoryView";
+import { PlansView } from "./features/account/PlansView";
 import { AccountView } from "./features/auth/AccountView";
 import { SignInView } from "./features/auth/SignInView";
 import { useSession } from "./features/auth/useSession";
@@ -46,6 +48,8 @@ function ViewContent({ view }: { view: View }) {
 	if (view.kind === "checkout") return <CheckoutView />;
 	if (view.kind === "scan") return <ScanView />;
 	if (view.kind === "account") return <AccountView />;
+	if (view.kind === "history") return <HistoryView />;
+	if (view.kind === "plans") return <PlansView />;
 	return <NearbyView />;
 }
 

@@ -7,7 +7,9 @@ export type View =
 	| { kind: "ride" }
 	| { kind: "checkout" }
 	| { kind: "scan" }
-	| { kind: "account" };
+	| { kind: "account" }
+	| { kind: "history" }
+	| { kind: "plans" };
 
 export type Snap = "peek" | "half" | "full";
 
@@ -42,7 +44,7 @@ function viewToUrl(view: View) {
 	const params = new URLSearchParams();
 	if (view.kind === "station" || view.kind === "scooter") params.set("station", String(view.stationId));
 	if (view.kind === "scooter") params.set("scooter", String(view.scooterId));
-	if (view.kind === "ride" || view.kind === "checkout" || view.kind === "scan" || view.kind === "account") params.set("view", view.kind);
+	if (pageViews.has(view.kind)) params.set("view", view.kind);
 	const search = params.toString();
 	return `${window.location.pathname}${search ? `?${search}` : ""}`;
 }
@@ -52,22 +54,22 @@ function positiveInt(value: string | null) {
 	return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
 }
 
+const pageViews = new Set<string>(["ride", "checkout", "scan", "account", "history", "plans"]);
+
 export function viewFromUrl(search = window.location.search): View {
 	const params = new URLSearchParams(search);
 	const stationId = positiveInt(params.get("station"));
 	const scooterId = positiveInt(params.get("scooter"));
 	if (stationId != null && scooterId != null) return { kind: "scooter", stationId, scooterId };
 	if (stationId != null) return { kind: "station", stationId };
-	if (params.get("view") === "ride") return { kind: "ride" };
-	if (params.get("view") === "checkout") return { kind: "checkout" };
-	if (params.get("view") === "scan") return { kind: "scan" };
-	if (params.get("view") === "account") return { kind: "account" };
+	const page = params.get("view");
+	if (page && pageViews.has(page)) return { kind: page } as View;
 	return { kind: "nearby" };
 }
 
 // Detail views open at half height so the map context stays visible; the login form gets the full sheet.
 function preferredSnap(view: View, current: Snap): Snap {
-	if (view.kind === "account" || view.kind === "checkout" || view.kind === "scan") return "full";
+	if (view.kind === "account" || view.kind === "checkout" || view.kind === "scan" || view.kind === "history" || view.kind === "plans") return "full";
 	if (view.kind === "nearby") return current === "peek" ? "peek" : "half";
 	return "half";
 }

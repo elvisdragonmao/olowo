@@ -26,6 +26,7 @@ olowo is a real, responsive oloo client for phones and desktops. It is not a pho
 - The README shows `public/assets/brand/og.webp` (also the Open Graph image). `pnpm screenshots` (`tests/screenshots.spec.ts`, mocked API, real Mapbox tiles) renders fresh screenshots into `docs/screenshots/` when needed.
 - SEO lives in `index.html` (title 「olowo - 好用快速的 oloo 客戶端」, Open Graph, Twitter card, JSON-LD); `vite.config.ts` fills `%SITE_ORIGIN%` from `VITE_PUBLIC_ORIGIN` (compose passes `PUBLIC_ORIGIN`) and emits `robots.txt` and `sitemap.xml`.
 - The avatar is the rider's Gravatar (SHA-256 of the email), falling back to the initial.
+- 騎乘分析 is a separate page at `/insights` (`src/features/insights`, opened in a new tab from the account view and 騎乘紀錄). It loads no map, computes everything client-side from `/v1/rides/history`, keeps the range in the URL (`?range=this-month|…|custom&from=&to=`) and is `noindex`. Charts are hand-built SVG/HTML: one series in `--chart-1` (validated per mode), hairline grid, tooltips on hover and focus, and a 「看數據」 table under each chart. Never draw a dual axis; the trend switches metric instead.
 - Icons are the olowo wordmark (`public/assets/brand`); do not ship oloo's logo or artwork.
 - Phones (< 920 px): a draggable bottom sheet with `peek`, `half` and `full` snaps. Detail views open at `half` so the map stays visible. Desktop: a floating left panel over a full-bleed map.
 - Signed-out riders see sign-in first: station data comes from oloo and needs their credential. Do not add demo or placeholder stations.

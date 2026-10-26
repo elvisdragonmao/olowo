@@ -63,7 +63,10 @@ function Camera({ onCode, paused }: { onCode: (code: string) => void; paused: bo
 		// Loaded on demand: the decoder and its worker are only needed on this screen.
 		void import("qr-scanner").then(async ({ default: QrScanner }) => {
 			if (disposed || !video.current) return;
-			if (!(await QrScanner.hasCamera())) {
+			const hasCamera = await QrScanner.hasCamera();
+			// The rider may have typed a plate and left while the camera was being probed.
+			if (disposed || !video.current) return;
+			if (!hasCamera) {
 				setStatus("unavailable");
 				return;
 			}

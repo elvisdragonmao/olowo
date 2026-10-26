@@ -3,20 +3,103 @@
 	<head>
 		<meta charset="UTF-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content" />
+		<title>olowo - 好用快速的 oloo 客戶端</title>
+		<meta name="description" content="olowo 是好用又快速的第三方 oloo 滑板車客戶端：地圖看每站可借車數與每台電量、預約倒數、騎乘定時自動歸還與重借、騎乘紀錄、訂閱方案與優惠券。" />
+		<meta name="author" content="毛哥EM" />
+		<meta name="robots" content="index, follow, max-image-preview:large" />
+		<link rel="canonical" href="%SITE_ORIGIN%/" />
+
+		<meta property="og:type" content="website" />
+		<meta property="og:site_name" content="olowo" />
+		<meta property="og:locale" content="zh_TW" />
+		<meta property="og:url" content="%SITE_ORIGIN%/" />
+		<meta property="og:title" content="olowo - 好用快速的 oloo 客戶端" />
+		<meta property="og:description" content="地圖看每站可借車數與每台電量、預約倒數、騎乘定時自動歸還與重借、訂閱方案與優惠券，一個 PWA 全搞定。" />
+		<meta property="og:image" content="%SITE_ORIGIN%/assets/brand/og.webp" />
+		<meta property="og:image:type" content="image/webp" />
+		<meta property="og:image:width" content="1800" />
+		<meta property="og:image:height" content="900" />
+		<meta property="og:image:alt" content="olowo：oloo 站點地圖、電量與騎乘計時" />
+		<meta name="twitter:card" content="summary_large_image" />
+		<meta name="twitter:title" content="olowo - 好用快速的 oloo 客戶端" />
+		<meta name="twitter:description" content="地圖看每站可借車數與每台電量、預約倒數、騎乘定時自動歸還與重借、訂閱方案與優惠券。" />
+		<meta name="twitter:image" content="%SITE_ORIGIN%/assets/brand/og.webp" />
+		<meta name="twitter:image:alt" content="olowo：oloo 站點地圖、電量與騎乘計時" />
+
+		<meta name="application-name" content="olowo" />
+		<meta name="apple-mobile-web-app-title" content="olowo" />
+		<meta name="apple-mobile-web-app-capable" content="yes" />
+		<meta name="mobile-web-app-capable" content="yes" />
+		<meta name="apple-mobile-web-app-status-bar-style" content="default" />
+		<meta name="format-detection" content="telephone=no" />
 		<meta name="theme-color" content="#f4f5f1" media="(prefers-color-scheme: light)" />
 		<meta name="theme-color" content="#0e1412" media="(prefers-color-scheme: dark)" />
 		<meta name="color-scheme" content="light dark" />
-		<meta name="description" content="oloo 站點即時車況：哪站有車、每台電量、為什麼借不到。" />
-		<meta name="apple-mobile-web-app-capable" content="yes" />
-		<meta name="apple-mobile-web-app-status-bar-style" content="default" />
 		<link rel="manifest" href="/manifest.webmanifest" />
 		<link rel="icon" type="image/png" sizes="48x48" href="/assets/brand/favicon-48.png" />
 		<link rel="icon" type="image/png" sizes="192x192" href="/assets/brand/olowo-icon-192.png" />
 		<link rel="apple-touch-icon" href="/assets/brand/apple-touch-icon.png" />
-		<title>olowo</title>
+		<link rel="preconnect" href="https://api.mapbox.com" crossorigin />
+
+		<script type="application/ld+json">
+			{
+				"@context": "https://schema.org",
+				"@graph": [
+					{
+						"@type": "WebSite",
+						"@id": "%SITE_ORIGIN%/#website",
+						"url": "%SITE_ORIGIN%/",
+						"name": "olowo",
+						"alternateName": "olowo - 好用快速的 oloo 客戶端",
+						"description": "好用又快速的第三方 oloo 滑板車客戶端。",
+						"inLanguage": "zh-Hant",
+						"publisher": { "@id": "%SITE_ORIGIN%/#author" }
+					},
+					{
+						"@type": "WebApplication",
+						"@id": "%SITE_ORIGIN%/#app",
+						"name": "olowo",
+						"url": "%SITE_ORIGIN%/",
+						"description": "第三方 oloo 滑板車客戶端：站點地圖、每台車的電量與定位、預約倒數、騎乘定時自動歸還與重借、騎乘紀錄、訂閱方案與優惠券。",
+						"applicationCategory": "TravelApplication",
+						"operatingSystem": "Web, iOS, Android",
+						"browserRequirements": "Requires JavaScript and WebGL",
+						"inLanguage": "zh-Hant",
+						"isAccessibleForFree": true,
+						"offers": { "@type": "Offer", "price": "0", "priceCurrency": "TWD" },
+						"image": "%SITE_ORIGIN%/assets/brand/og.webp",
+						"screenshot": "%SITE_ORIGIN%/assets/brand/og.webp",
+						"featureList": ["站點地圖與電子圍籬", "每台車的電量、續航與定位", "預約 5 分鐘倒數", "騎乘定時自動歸還", "歸還後自動重借", "騎乘紀錄與計費明細", "訂閱方案、加值時數與續約", "優惠券兌換"],
+						"license": "https://www.apache.org/licenses/LICENSE-2.0",
+						"isBasedOn": { "@id": "%SITE_ORIGIN%/#source" },
+						"author": { "@id": "%SITE_ORIGIN%/#author" }
+					},
+					{
+						"@type": "SoftwareSourceCode",
+						"@id": "%SITE_ORIGIN%/#source",
+						"name": "olowo",
+						"codeRepository": "https://github.com/elvisdragonmao/olowo",
+						"programmingLanguage": "TypeScript",
+						"license": "https://www.apache.org/licenses/LICENSE-2.0",
+						"author": { "@id": "%SITE_ORIGIN%/#author" }
+					},
+					{
+						"@type": "Person",
+						"@id": "%SITE_ORIGIN%/#author",
+						"name": "毛哥EM",
+						"url": "https://github.com/elvisdragonmao",
+						"sameAs": ["https://github.com/elvisdragonmao"]
+					}
+				]
+			}
+		</script>
 	</head>
 	<body>
 		<div id="root"></div>
+		<noscript>
+			<h1>olowo - 好用快速的 oloo 客戶端</h1>
+			<p>第三方 oloo 滑板車客戶端：站點地圖、每台車的電量、預約、騎乘定時自動歸還與重借、騎乘紀錄、訂閱方案與優惠券。需要啟用 JavaScript。</p>
+		</noscript>
 		<script type="module" src="/src/main.tsx"></script>
 	</body>
 </html>

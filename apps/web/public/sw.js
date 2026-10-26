@@ -1,4 +1,4 @@
-const CACHE_NAME = "olowo-shell-v3";
+const CACHE_NAME = "olowo-shell-v4";
 const APP_SHELL = ["/", "/manifest.webmanifest", "/assets/brand/olowo-icon-192.png", "/assets/brand/olowo-icon-512.png"];
 
 self.addEventListener("install", event => {

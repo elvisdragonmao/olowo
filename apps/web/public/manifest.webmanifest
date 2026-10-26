@@ -1,7 +1,7 @@
 {
-	"name": "olowo",
+	"name": "olowo - 好用快速的 oloo 客戶端",
 	"short_name": "olowo",
-	"description": "oloo 站點即時車況、借還車與騎乘計時",
+	"description": "好用又快速的第三方 oloo 客戶端：站點地圖、每台電量、預約倒數、騎乘定時、方案與優惠券",
 	"lang": "zh-Hant",
 	"start_url": "/",
 	"scope": "/",
@@ -20,6 +20,17 @@
 			"sizes": "512x512",
 			"type": "image/png",
 			"purpose": "any maskable"
+		}
+	],
+	"id": "/",
+	"categories": ["travel", "navigation", "utilities"],
+	"screenshots": [
+		{
+			"src": "/assets/brand/og.webp",
+			"sizes": "1800x900",
+			"type": "image/webp",
+			"form_factor": "wide",
+			"label": "olowo 站點地圖與騎乘計時"
 		}
 	]
 }

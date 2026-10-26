@@ -49,6 +49,7 @@ services:
       target: web
       args:
         VITE_MAPBOX_ACCESS_TOKEN: ${VITE_MAPBOX_ACCESS_TOKEN:-}
+        VITE_PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-}
     environment:
       SITE_ADDRESS: ${SITE_ADDRESS:-:80}
     # Set HTTP_BIND=0.0.0.0 with HTTP_PORT=80 / HTTPS_PORT=443 when Caddy itself faces the internet.

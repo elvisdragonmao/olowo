@@ -33,6 +33,8 @@ CMD ["node", "dist/server.js"]
 FROM deps AS web-build
 # Mapbox public tokens are designed to ship in the browser bundle.
 ARG VITE_MAPBOX_ACCESS_TOKEN
+# Canonical and Open Graph URLs.
+ARG VITE_PUBLIC_ORIGIN
 COPY apps/web apps/web
 RUN pnpm --filter @olowo/web exec tsc && pnpm --filter @olowo/web exec vite build
 

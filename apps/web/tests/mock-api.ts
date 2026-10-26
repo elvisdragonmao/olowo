@@ -347,6 +347,38 @@ export async function mockOlowoApi(page: Page, options: { authenticated?: boolea
 								canPurchase: false,
 								reasons: ["已停售"]
 							}
+						],
+						others: [
+							{
+								contractId: 10,
+								name: "Infinite",
+								tagline: "高級騎士",
+								kind: "monthly",
+								price: 899,
+								includedMinutes: 0,
+								periodDays: 30,
+								ratePerMinute: 0.5,
+								startPrice: 0,
+								startMinutes: 20,
+								lines: ["每次騎乘前 20 分鐘免費", "20 分鐘後，每分鐘 0.5 元"],
+								availability: "unlisted",
+								regions: []
+							},
+							{
+								contractId: 7,
+								name: "beta_Plus",
+								tagline: "中級騎士",
+								kind: "monthly",
+								price: 509,
+								includedMinutes: 450,
+								periodDays: 30,
+								ratePerMinute: 0.5,
+								startPrice: 5,
+								startMinutes: 5,
+								lines: ["每個月前 300 分鐘免費+ 150 分鐘免費"],
+								availability: "retired",
+								regions: []
+							}
 						]
 					});
 				case "GET /v1/rides/9123/estimate":

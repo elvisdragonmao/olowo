@@ -74,6 +74,10 @@ const takeEffectSchema = z
 	})
 	.passthrough();
 type TakeEffect = z.infer<typeof takeEffectSchema>;
+type Contract = z.infer<typeof contractSchema>;
+type RidePlan = z.infer<typeof ridePlanSchema>;
+
+const availabilityOrder = { other_region: 0, unlisted: 1, retired: 2 } as const;
 
 const optionSchema = z.array(z.object({ name: z.string(), value: z.string().nullish() }).passthrough());
 const canPurchaseSchema = z.object({ canPurchase: z.boolean(), reasons: z.array(z.string()).default([]) }).passthrough();
@@ -93,6 +97,19 @@ function areaMapping(options: unknown) {
 		.record(z.string(), z.array(z.coerce.number()))
 		.catch({})
 		.parse(mappingText ? JSON.parse(mappingText) : {});
+}
+
+/** `passport_schools`: region code → `{ shortName, name }`, e.g. NCHU → 中興. */
+function schoolNames(options: unknown) {
+	const text = optionSchema.parse(options).find(option => option.name === "passport_schools")?.value;
+	try {
+		return z
+			.record(z.string(), z.object({ shortName: z.string() }).passthrough())
+			.catch({})
+			.parse(text ? JSON.parse(text) : {});
+	} catch {
+		return {};
+	}
 }
 
 /** Every contract some region offers; hidden campaign and staff contracts are not sold through olowo. */
@@ -124,6 +141,7 @@ export async function fetchPlanCatalog(baseUrl: string, token: string, region: s
 			.map(plan => [plan.id, plan])
 	);
 	const mapping = areaMapping(optionsRaw);
+	const schools = schoolNames(optionsRaw);
 	const offered = (region ? mapping[region] : undefined) ?? mapping.default ?? [];
 	const takeEffect = takeEffectSchema.parse(takeEffectRaw ?? {});
 	const activeContract = takeEffect.activeUserContract?.[0] ?? null;
@@ -137,6 +155,20 @@ export async function fetchPlanCatalog(baseUrl: string, token: string, region: s
 		)
 	);
 
+	const describe = (contract: Contract, plan: RidePlan) => ({
+		contractId: contract.id,
+		name: plan.name,
+		tagline: plan.details?.cardBanner?.title ?? null,
+		kind: contract.paymentType === "Monthly" ? ("monthly" as const) : ("pass" as const),
+		price: contract.details?.actualPayPrice ?? plan.actualPayPrice ?? null,
+		includedMinutes: plan.planMinutes ?? null,
+		periodDays: plan.period ?? null,
+		ratePerMinute: plan.normalRate ?? null,
+		startPrice: plan.minPrice ?? null,
+		startMinutes: plan.minMinute ?? null,
+		lines: lines(plan.description)
+	});
+
 	const plans = offered.flatMap((contractId, index) => {
 		const contract = contracts.get(contractId);
 		const plan = contract?.itemId != null ? ridePlans.get(contract.itemId) : undefined;
@@ -144,15 +176,7 @@ export async function fetchPlanCatalog(baseUrl: string, token: string, region: s
 		const check = checks[index];
 		return [
 			{
-				contractId,
-				name: plan.name,
-				tagline: plan.details?.cardBanner?.title ?? null,
-				kind: contract.paymentType === "Monthly" ? ("monthly" as const) : ("pass" as const),
-				price: contract.details?.actualPayPrice ?? plan.actualPayPrice ?? null,
-				includedMinutes: plan.planMinutes ?? null,
-				periodDays: plan.period ?? null,
-				ratePerMinute: plan.normalRate ?? null,
-				lines: lines(plan.description),
+				...describe(contract, plan),
 				current: activeContract?.contractId === contractId,
 				next: takeEffect.nextActivateRidePlan?.id === plan.id,
 				canPurchase: check?.canPurchase ?? null,
@@ -160,6 +184,28 @@ export async function fetchPlanCatalog(baseUrl: string, token: string, region: s
 			}
 		];
 	});
+
+	// Everything else in /contracts, to compare against: never sold through olowo. Variants that differ only in
+	// installment count (e.g. Starter 1/4/10) share a ride plan and price, so one of each is kept.
+	const listed = new Set(plans.map(plan => plan.contractId));
+	const seen = new Set<string>();
+	const others = [...contracts.values()]
+		.flatMap(contract => {
+			const plan = contract.itemId != null ? ridePlans.get(contract.itemId) : undefined;
+			if (!plan || listed.has(contract.id)) return [];
+			const described = describe(contract, plan);
+			const key = `${plan.id}:${described.price}`;
+			if (seen.has(key)) return [];
+			seen.add(key);
+			const regions = Object.entries(mapping)
+				.filter(([name, ids]) => name !== "default" && ids.includes(contract.id))
+				.map(([name]) => schools[name]?.shortName ?? name);
+			// oloo parks some passes at $99999 instead of disabling them.
+			const retired = contract.details?.disabled === true || plan.isActive === false || (described.price ?? 0) >= 99999;
+			const availability = retired ? ("retired" as const) : regions.length > 0 ? ("other_region" as const) : ("unlisted" as const);
+			return [{ ...described, availability, regions }];
+		})
+		.sort((a, b) => availabilityOrder[a.availability] - availabilityOrder[b.availability] || (a.price ?? 0) - (b.price ?? 0));
 
 	const autoRenewCanceled = activeContract?.details?.autoRenewCanceled ?? activeContract?.details?.opts?.autoRenewCanceled ?? null;
 	return {
@@ -180,7 +226,8 @@ export async function fetchPlanCatalog(baseUrl: string, token: string, region: s
 						(activeContract ? contracts.get(activeContract.contractId)?.details?.topUp : null)?.map(item => ({ id: item.id, minutes: item.minutes, price: item.price, tag: item.tag ?? null })) ?? []
 				}
 			: null,
-		plans
+		plans,
+		others
 	};
 }
 

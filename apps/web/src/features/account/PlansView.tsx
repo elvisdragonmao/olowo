@@ -6,7 +6,7 @@ import { apiRequest } from "../../shared/api";
 import { useCampuses } from "../fleet/useCampus";
 import { PaymentPanel } from "./PaymentPanel";
 
-interface Plan {
+interface PlanSummary {
 	contractId: number;
 	name: string;
 	tagline: string | null;
@@ -15,7 +15,12 @@ interface Plan {
 	includedMinutes: number | null;
 	periodDays: number | null;
 	ratePerMinute: number | null;
+	startPrice: number | null;
+	startMinutes: number | null;
 	lines: string[];
+}
+
+interface Plan extends PlanSummary {
 	current: boolean;
 	next: boolean;
 	canPurchase: boolean | null;
@@ -38,11 +43,12 @@ interface Catalog {
 		topUps: Array<{ id: number; minutes: number; price: number; tag: string | null }>;
 	} | null;
 	plans: Plan[];
+	others: Array<PlanSummary & { availability: "other_region" | "unlisted" | "retired"; regions: string[] }>;
 }
 
 const date = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString("zh-TW", { month: "numeric", day: "numeric" }) : "—");
 
-function period(plan: Plan) {
+function period(plan: PlanSummary) {
 	if (plan.periodDays == null) return null;
 	if (plan.periodDays >= 1) return `${Math.round(plan.periodDays)} 天`;
 	return `${Math.round(plan.periodDays * 24 * 10) / 10} 小時`;
@@ -145,24 +151,7 @@ export function PlansView() {
 				<ol className="plan-list" aria-label="可訂閱的方案">
 					{catalog.data?.plans.map(plan => (
 						<li key={plan.contractId} className="plan-card" data-current={plan.current}>
-							<div className="plan-card-head">
-								<div>
-									<strong>{plan.name}</strong>
-									<span>
-										{plan.kind === "monthly" ? "月方案" : "悠遊券"}
-										{period(plan) ? ` · ${period(plan)}` : ""}
-										{plan.tagline && plan.tagline !== plan.name ? ` · ${plan.tagline}` : ""}
-									</span>
-								</div>
-								<p className="plan-price">{plan.price != null ? `$${plan.price}` : "—"}</p>
-							</div>
-							{plan.lines.length > 0 ? (
-								<ul className="plan-lines">
-									{plan.lines.map(line => (
-										<li key={line}>{line}</li>
-									))}
-								</ul>
-							) : null}
+							<PlanDetails plan={plan} />
 							<p className="plan-status" data-ok={plan.canPurchase === true && !plan.current}>
 								{plan.current ? (
 									<>
@@ -198,7 +187,58 @@ export function PlansView() {
 					這裡列的是 oloo 在{campus ? campus.name : "這個校區"}公開販售的方案，能否訂閱由 oloo 判斷（與官方 App 相同的檢查）。已有月方案時，新買的月方案會在目前方案到期後才開始；金額與生效時間以付款前
 					oloo 的試算為準。
 				</p>
+
+				{catalog.data && catalog.data.others.length > 0 ? (
+					<section className="section">
+						<h3 className="section-title">其他方案 · 不能在這裡買</h3>
+						<p className="muted small">
+							oloo 系統裡還有這些方案，但官方 App 沒有在{campus ? campus.name : "這個校區"}販售：其他校區的、活動或合作限定的、補償用的，以及已經下架的舊方案。只列出來比較。
+						</p>
+						<ol className="plan-list" aria-label="其他方案">
+							{catalog.data.others.map(plan => (
+								<li key={plan.contractId} className="plan-card" data-other={plan.availability}>
+									<PlanDetails plan={plan} />
+									<p className="plan-status">
+										{plan.availability === "other_region" ? `${plan.regions.join("、")}限定` : plan.availability === "unlisted" ? "沒有公開販售（活動、合作或補償）" : "已下架"}
+									</p>
+								</li>
+							))}
+						</ol>
+					</section>
+				) : null}
 			</div>
+		</>
+	);
+}
+
+function PlanDetails({ plan }: { plan: PlanSummary }) {
+	const extra =
+		plan.ratePerMinute == null
+			? null
+			: plan.startPrice
+				? `起步 ${plan.startMinutes ?? 0} 分 $${plan.startPrice}，之後每分 $${plan.ratePerMinute}`
+				: `${plan.kind === "pass" ? "超時" : "超出時數"}每分 $${plan.ratePerMinute}`;
+	return (
+		<>
+			<div className="plan-card-head">
+				<div>
+					<strong>{plan.name}</strong>
+					<span>
+						{plan.kind === "monthly" ? "月方案" : "悠遊券"}
+						{period(plan) ? ` · ${period(plan)}` : ""}
+						{plan.tagline && plan.tagline !== plan.name ? ` · ${plan.tagline}` : ""}
+					</span>
+				</div>
+				<p className="plan-price">{plan.price != null ? `$${plan.price}` : "—"}</p>
+			</div>
+			{plan.lines.length > 0 ? (
+				<ul className="plan-lines">
+					{plan.lines.map(line => (
+						<li key={line}>{line}</li>
+					))}
+				</ul>
+			) : null}
+			{extra ? <p className="plan-rate">{extra}</p> : null}
 		</>
 	);
 }

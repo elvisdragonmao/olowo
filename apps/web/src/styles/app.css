@@ -2224,3 +2224,17 @@ code {
 .credits .wordmark {
 	font-size: 15px;
 }
+
+.plan-rate {
+	color: var(--ink-2);
+	font-size: 12.5px;
+	font-variant-numeric: tabular-nums;
+}
+
+.plan-card[data-other] {
+	border-style: dashed;
+}
+
+.plan-card[data-other="retired"] {
+	opacity: 0.7;
+}

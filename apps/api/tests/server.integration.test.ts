@@ -456,6 +456,11 @@ test("Fastify completes the authenticated ride and reservation workflow", async 
 		"disabled contracts are hidden and each plan carries oloo's own purchase check"
 	);
 	assert.deepEqual(
+		(catalog as unknown as { others: Array<Record<string, unknown>> }).others.map(plan => [plan.contractId, plan.availability, plan.regions]),
+		[[1, "retired", ["NCTU-NTHU"]]],
+		"plans not sold here are listed for comparison"
+	);
+	assert.deepEqual(
 		[catalog.current.userContractId, catalog.current.name, catalog.current.remainingMinutes, catalog.current.autoRenew, catalog.current.topUps],
 		[53393, "月用量 Starter", 12, true, [{ id: 1, minutes: 15, price: 33, tag: null }]]
 	);

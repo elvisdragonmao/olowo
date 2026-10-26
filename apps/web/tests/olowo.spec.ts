@@ -256,6 +256,11 @@ test("account shows ride history and the plans this campus offers", async ({ pag
 	await expect(panel(page).getByText(/剩 0 \/ 60 分/)).toBeVisible();
 	await expect(panel(page).locator(".plan-card").filter({ hasText: "月用量 Plus" }).getByText("可以訂閱")).toBeVisible();
 	await expect(panel(page).locator(".plan-card").filter({ hasText: "悠遊券" }).getByText("不能訂閱：已停售")).toBeVisible();
+	const others = panel(page).getByRole("list", { name: "其他方案" });
+	await expect(others.locator(".plan-card").filter({ hasText: "Infinite" }).getByText("超出時數每分 $0.5")).toBeVisible();
+	await expect(others.locator(".plan-card").filter({ hasText: "Infinite" }).getByText("沒有公開販售（活動、合作或補償）")).toBeVisible();
+	await expect(others.locator(".plan-card").filter({ hasText: "beta_Plus" }).getByText("已下架")).toBeVisible();
+	await expect(others.getByRole("button", { name: "購買" })).toHaveCount(0);
 	await page.screenshot({ path: test.info().outputPath("plans.png") });
 	expect(errors.filter(error => !error.includes("401"))).toEqual([]);
 });

@@ -4,7 +4,7 @@
 
 ![olowo 使用截圖](apps/web/public/assets/brand/og.webp)
 
-線上版：<https://oluwu.emtech.cc>（用 oloo 帳號的 Email 登入）
+線上版：<https://olowo.emtech.cc>（用 oloo 帳號的 Email 登入）
 
 ## 功能
 

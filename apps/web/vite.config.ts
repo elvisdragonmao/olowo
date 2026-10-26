@@ -19,7 +19,7 @@ function seo(origin: string): Plugin {
 
 // The browser talks to Fastify through the same origin so the HttpOnly session cookie stays first-party.
 export default defineConfig(({ mode }) => {
-	const origin = (process.env.VITE_PUBLIC_ORIGIN || loadEnv(mode, process.cwd(), "VITE_").VITE_PUBLIC_ORIGIN || "https://oluwu.emtech.cc").replace(/\/+$/, "");
+	const origin = (process.env.VITE_PUBLIC_ORIGIN || loadEnv(mode, process.cwd(), "VITE_").VITE_PUBLIC_ORIGIN || "https://olowo.emtech.cc").replace(/\/+$/, "");
 	return {
 		build: {
 			outDir: "dist/client"

@@ -1,13 +1,13 @@
 {
 	"name": "olowo",
 	"short_name": "olowo",
-	"description": "更清楚的 oloo 電量、定位與可借狀態",
+	"description": "oloo 站點即時車況、借還車與騎乘計時",
 	"lang": "zh-Hant",
 	"start_url": "/",
 	"scope": "/",
 	"display": "standalone",
-	"background_color": "#fffefa",
-	"theme_color": "#004f42",
+	"background_color": "#00463a",
+	"theme_color": "#00463a",
 	"icons": [
 		{
 			"src": "/assets/brand/olowo-icon-192.png",

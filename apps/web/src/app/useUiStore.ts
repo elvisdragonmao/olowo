@@ -9,7 +9,8 @@ export type View =
 	| { kind: "scan" }
 	| { kind: "account" }
 	| { kind: "history" }
-	| { kind: "plans" };
+	| { kind: "plans" }
+	| { kind: "coupons" };
 
 export type Snap = "peek" | "half" | "full";
 
@@ -54,7 +55,7 @@ function positiveInt(value: string | null) {
 	return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
 }
 
-const pageViews = new Set<string>(["ride", "checkout", "scan", "account", "history", "plans"]);
+const pageViews = new Set<string>(["ride", "checkout", "scan", "account", "history", "plans", "coupons"]);
 
 export function viewFromUrl(search = window.location.search): View {
 	const params = new URLSearchParams(search);
@@ -69,7 +70,7 @@ export function viewFromUrl(search = window.location.search): View {
 
 // Detail views open at half height so the map context stays visible; the login form gets the full sheet.
 function preferredSnap(view: View, current: Snap): Snap {
-	if (view.kind === "account" || view.kind === "checkout" || view.kind === "scan" || view.kind === "history" || view.kind === "plans") return "full";
+	if (view.kind === "account" || view.kind === "checkout" || view.kind === "scan" || view.kind === "history" || view.kind === "plans" || view.kind === "coupons") return "full";
 	if (view.kind === "nearby") return current === "peek" ? "peek" : "half";
 	return "half";
 }

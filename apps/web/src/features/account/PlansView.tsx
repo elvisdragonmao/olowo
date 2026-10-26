@@ -1,8 +1,10 @@
 import { ArrowLeft, Check } from "@phosphor-icons/react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import { useUiStore } from "../../app/useUiStore";
 import { apiRequest } from "../../shared/api";
 import { useCampuses } from "../fleet/useCampus";
+import { PaymentPanel } from "./PaymentPanel";
 
 interface Plan {
 	contractId: number;
@@ -23,6 +25,8 @@ interface Plan {
 interface Catalog {
 	region: string | null;
 	current: {
+		userContractId: number | null;
+		contractId: number | null;
 		name: string | null;
 		startsAt: string | null;
 		endsAt: string | null;
@@ -31,7 +35,7 @@ interface Catalog {
 		ratePerMinute: number | null;
 		autoRenew: boolean | null;
 		nextPlanName: string | null;
-		topUps: Array<{ minutes: number; price: number; tag: string | null }>;
+		topUps: Array<{ id: number; minutes: number; price: number; tag: string | null }>;
 	} | null;
 	plans: Plan[];
 }
@@ -44,9 +48,15 @@ function period(plan: Plan) {
 	return `${Math.round(plan.periodDays * 24 * 10) / 10} 小時`;
 }
 
-/** The plans oloo sells on this campus and whether this account can buy each one (oloo's own check). */
+/** The plans oloo sells on this campus, oloo's own purchase check for each, and buying, topping up and renewal. */
 export function PlansView() {
 	const back = useUiStore(state => state.back);
+	const queryClient = useQueryClient();
+	// Which purchase panel is open: `plan:<contractId>` or `top-up:<id>`.
+	const [open, setOpen] = useState<string | null>(null);
+	const [notice, setNotice] = useState<string | null>(null);
+	const toggle = (id: string) => (setNotice(null), setOpen(value => (value === id ? null : id)));
+	const paid = (message: string) => (setOpen(null), setNotice(message));
 	const { current: campus } = useCampuses();
 	const region = campus?.stations.find(station => station.region)?.region ?? null;
 	const catalog = useQuery({
@@ -54,6 +64,16 @@ export function PlansView() {
 		queryFn: () => apiRequest<Catalog>(`/v1/plans${region ? `?region=${encodeURIComponent(region)}` : ""}`)
 	});
 	const current = catalog.data?.current ?? null;
+	const renewal = useMutation({
+		mutationFn: (next: { cancel: true } | { contractId: number }) =>
+			"cancel" in next
+				? apiRequest("/v1/plans/current/auto-renew", { method: "DELETE" })
+				: apiRequest("/v1/plans/current/next", { method: "PUT", body: JSON.stringify({ contractId: next.contractId }) }),
+		onSuccess: (_, next) => {
+			setNotice("cancel" in next ? "已取消自動續約，方案用到到期日。" : "已更改下期方案。");
+			void queryClient.invalidateQueries({ queryKey: ["plans"] });
+		}
+	});
 
 	return (
 		<>
@@ -69,6 +89,11 @@ export function PlansView() {
 			<div className="view-body">
 				{catalog.isPending ? <p className="skeleton-text">讀取方案</p> : null}
 				{catalog.error ? <p className="inline-error">讀不到方案：{catalog.error.message}</p> : null}
+				{notice ? (
+					<p className="status-card" data-state="completed" aria-live="polite">
+						<strong>{notice}</strong>
+					</p>
+				) : null}
 				{current ? (
 					<section className="bill-card" aria-label="目前方案">
 						<p className="muted small">
@@ -87,7 +112,31 @@ export function PlansView() {
 							{current.remainingMinutes === 0 && current.ratePerMinute != null ? `免費時數用完，之後每分 $${current.ratePerMinute}。` : ""}
 							{current.autoRenew === false ? "已取消自動續約。" : current.nextPlanName ? `到期後自動續約「${current.nextPlanName}」。` : ""}
 						</p>
-						{current.topUps.length > 0 ? <p className="muted small">可加值：{current.topUps.map(item => `${item.minutes} 分 $${item.price}`).join("、")}</p> : null}
+						{current.topUps.length > 0 ? (
+							<>
+								<h3 className="section-title">加值時數</h3>
+								<div className="choice-grid top-up-grid">
+									{current.topUps.map(item => (
+										<button key={item.id} type="button" aria-pressed={open === `top-up:${item.id}`} onClick={() => toggle(`top-up:${item.id}`)}>
+											<strong>{item.minutes} 分</strong>
+											<span>
+												${item.price}
+												{item.tag ? ` · ${item.tag}` : ""}
+											</span>
+										</button>
+									))}
+								</div>
+								{current.topUps.map(item =>
+									open === `top-up:${item.id}` ? <PaymentPanel key={item.id} path={`/v1/plans/current/top-ups/${item.id}`} scope="topUp" onPaid={() => paid(`已加值 ${item.minutes} 分鐘。`)} /> : null
+								)}
+							</>
+						) : null}
+						{current.autoRenew !== false ? (
+							<button type="button" className="button button-quiet" onClick={() => renewal.mutate({ cancel: true })} disabled={renewal.isPending}>
+								取消自動續約
+							</button>
+						) : null}
+						{renewal.error ? <p className="inline-error">續約設定沒有更新：{renewal.error.message}</p> : null}
 					</section>
 				) : catalog.data ? (
 					<p className="muted">目前沒有方案，騎乘以一般費率計費。</p>
@@ -119,6 +168,8 @@ export function PlansView() {
 									<>
 										<Check size={14} weight="bold" aria-hidden /> 使用中{plan.next ? "，到期自動續約" : ""}
 									</>
+								) : plan.next ? (
+									"下期續約的方案"
 								) : plan.canPurchase === true ? (
 									"可以訂閱"
 								) : plan.canPurchase === false ? (
@@ -127,10 +178,26 @@ export function PlansView() {
 									"oloo 沒有回覆能否訂閱"
 								)}
 							</p>
+							{!plan.current && plan.canPurchase !== false ? (
+								<div className="plan-actions">
+									<button type="button" className="button button-quiet" aria-pressed={open === `plan:${plan.contractId}`} onClick={() => toggle(`plan:${plan.contractId}`)}>
+										購買
+									</button>
+									{current && plan.kind === "monthly" && !plan.next ? (
+										<button type="button" className="button button-quiet" onClick={() => renewal.mutate({ contractId: plan.contractId })} disabled={renewal.isPending}>
+											設為下期方案
+										</button>
+									) : null}
+								</div>
+							) : null}
+							{open === `plan:${plan.contractId}` ? <PaymentPanel path={`/v1/plans/${plan.contractId}`} scope="plan" onPaid={() => paid(`已購買「${plan.name}」。`)} /> : null}
 						</li>
 					))}
 				</ol>
-				<p className="muted small">能否訂閱由 oloo 判斷（與官方 App 相同的檢查）。付款訂閱請在 oloo App 的「優惠方案」完成。</p>
+				<p className="muted small">
+					這裡列的是 oloo 在{campus ? campus.name : "這個校區"}公開販售的方案，能否訂閱由 oloo 判斷（與官方 App 相同的檢查）。已有月方案時，新買的月方案會在目前方案到期後才開始；金額與生效時間以付款前
+					oloo 的試算為準。
+				</p>
 			</div>
 		</>
 	);

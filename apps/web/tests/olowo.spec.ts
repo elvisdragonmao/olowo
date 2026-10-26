@@ -259,3 +259,39 @@ test("account shows ride history and the plans this campus offers", async ({ pag
 	await page.screenshot({ path: test.info().outputPath("plans.png") });
 	expect(errors.filter(error => !error.includes("401"))).toEqual([]);
 });
+
+test("buying a plan prices it first and can apply a coupon; codes redeem from 優惠券", async ({ page }) => {
+	const { api, errors } = await open(page, "/?view=plans");
+	const plus = panel(page).locator(".plan-card").filter({ hasText: "月用量 Plus" });
+	await plus.getByRole("button", { name: "購買" }).click();
+	await expect(plus.getByRole("button", { name: "付款 $599" })).toBeVisible();
+	await plus.getByRole("radio", { name: /小小心意券/ }).click();
+	await plus.getByRole("button", { name: "付款 $539" }).click();
+	await expect(panel(page).getByText("已購買「月用量 Plus」。")).toBeVisible();
+	expect(api.purchases).toEqual([{ path: "/v1/plans/51/purchase", body: { userCouponId: 41001 } }]);
+
+	await panel(page)
+		.getByRole("button", { name: /100 分/ })
+		.click();
+	await panel(page).getByRole("button", { name: "付款 $180" }).click();
+	await expect(panel(page).getByText("已加值 100 分鐘。")).toBeVisible();
+	expect(api.purchases.at(-1)).toEqual({ path: "/v1/plans/current/top-ups/5/purchase", body: { userCouponId: null } });
+
+	await page.goto("/?view=coupons");
+	await expect(panel(page).locator(".coupon-card").filter({ hasText: "小小心意券" }).getByText("可使用")).toBeVisible();
+	await expect(panel(page).getByText("已使用或過期")).toBeVisible();
+	await panel(page).getByLabel("優惠代碼").fill("NOPE");
+	await panel(page).getByRole("button", { name: "兌換" }).click();
+	await expect(panel(page).getByText("兌換失敗：Unknown coupon code")).toBeVisible();
+	await panel(page).getByLabel("優惠代碼").fill("OLOWO10");
+	await panel(page).getByRole("button", { name: "兌換" }).click();
+	await expect(panel(page).getByText("已兌換 OLOWO10。")).toBeVisible();
+	expect(api.redeemed).toEqual(["OLOWO10"]);
+	expect(errors.filter(error => !/401|404/.test(error))).toEqual([]);
+});
+
+test("account credits link to the GitHub repository", async ({ page }) => {
+	await open(page, "/?view=account");
+	await expect(panel(page).getByText(/由 毛哥EM 製作/)).toBeVisible();
+	await expect(panel(page).getByRole("link", { name: /在 GitHub 給顆/ })).toHaveAttribute("href", "https://github.com/elvisdragonmao/olowo");
+});

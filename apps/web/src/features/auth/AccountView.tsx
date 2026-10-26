@@ -1,9 +1,11 @@
-import { ArrowLeft, CaretRight, ClockCounterClockwise, SignOut, Ticket } from "@phosphor-icons/react";
+import { ArrowLeft, CaretRight, ClockCounterClockwise, GithubLogo, Percent, SignOut, Star, Ticket } from "@phosphor-icons/react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useUiStore } from "../../app/useUiStore";
 import { apiRequest } from "../../shared/api";
 import { LoginForm } from "./LoginForm";
 import { useSession } from "./useSession";
+
+const repositoryUrl = "https://github.com/elvisdragonmao/olowo";
 
 export function AccountView() {
 	const back = useUiStore(state => state.back);
@@ -54,6 +56,11 @@ export function AccountView() {
 								<span>訂閱方案</span>
 								<CaretRight size={14} weight="bold" aria-hidden />
 							</button>
+							<button type="button" className="menu-row" onClick={() => navigate({ kind: "coupons" })}>
+								<Percent size={18} weight="bold" aria-hidden />
+								<span>優惠券</span>
+								<CaretRight size={14} weight="bold" aria-hidden />
+							</button>
 						</nav>
 					</>
 				) : (
@@ -62,6 +69,17 @@ export function AccountView() {
 						<LoginForm onSignedIn={back} />
 					</>
 				)}
+				<footer className="credits">
+					<p>
+						<span className="wordmark" aria-label="olowo">
+							ol<span>owo</span>
+						</span>{" "}
+						由 毛哥EM 製作，不是 oloo 官方 App。
+					</p>
+					<a className="button button-quiet" href={repositoryUrl} target="_blank" rel="noreferrer">
+						<GithubLogo size={16} weight="bold" aria-hidden /> 在 GitHub 給顆 <Star size={14} weight="fill" aria-hidden />
+					</a>
+				</footer>
 			</div>
 		</>
 	);

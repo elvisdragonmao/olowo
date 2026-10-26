@@ -2106,3 +2106,121 @@ code {
 .plan-status[data-ok="true"] {
 	color: var(--available-ink);
 }
+
+/* ---------- account: buying, coupons, credits ---------- */
+
+.top-up-grid {
+	grid-template-columns: repeat(4, 1fr);
+}
+
+@media (max-width: 420px) {
+	.top-up-grid {
+		grid-template-columns: repeat(2, 1fr);
+	}
+}
+
+.plan-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+}
+
+.plan-actions .button[aria-pressed="true"] {
+	background: var(--surface-3);
+}
+
+.payment-panel {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+	padding-top: 10px;
+	box-shadow: 0 -1px 0 var(--line);
+}
+
+.coupon-pick {
+	grid-template-columns: repeat(2, 1fr);
+}
+
+.coupon-pick button[aria-checked="true"] {
+	border-color: var(--ink);
+	background: var(--surface-2);
+}
+
+.payment-summary {
+	display: flex;
+	align-items: baseline;
+	gap: 10px;
+	color: var(--ink-2);
+	font-size: 12.5px;
+}
+
+.payment-summary strong {
+	color: var(--ink);
+	font: 600 22px/1 var(--font-display);
+	font-variant-numeric: tabular-nums;
+}
+
+.redeem-form {
+	display: flex;
+	align-items: flex-end;
+	gap: 8px;
+}
+
+.redeem-form .field {
+	flex: 1;
+	min-width: 0;
+}
+
+.redeem-form .button {
+	height: 48px;
+}
+
+.coupon-list {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+}
+
+.coupon-card {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	padding: 14px;
+	border-radius: var(--radius);
+	border: 1px solid var(--line-strong);
+}
+
+.coupon-card[data-state="used"],
+.coupon-card[data-state="expired"] {
+	opacity: 0.6;
+}
+
+.coupon-details summary {
+	color: var(--ink-2);
+	font-size: 12.5px;
+	cursor: pointer;
+}
+
+.coupon-details p {
+	margin-top: 6px;
+	color: var(--ink-2);
+	font-size: 12.5px;
+	line-height: 1.6;
+	white-space: pre-line;
+}
+
+.credits {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 10px;
+	margin-top: auto;
+	padding-top: 16px;
+	box-shadow: 0 -1px 0 var(--line);
+	color: var(--ink-2);
+	font-size: 13px;
+}
+
+.credits .wordmark {
+	font-size: 15px;
+}

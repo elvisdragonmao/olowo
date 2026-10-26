@@ -4,6 +4,7 @@ import { motion } from "motion/react";
 import { lazy, Suspense, useEffect } from "react";
 import { Panel } from "./app/Panel";
 import { installHistorySync, useUiStore, type View } from "./app/useUiStore";
+import { CouponsView } from "./features/account/CouponsView";
 import { HistoryView } from "./features/account/HistoryView";
 import { PlansView } from "./features/account/PlansView";
 import { AccountView } from "./features/auth/AccountView";
@@ -50,6 +51,7 @@ function ViewContent({ view }: { view: View }) {
 	if (view.kind === "account") return <AccountView />;
 	if (view.kind === "history") return <HistoryView />;
 	if (view.kind === "plans") return <PlansView />;
+	if (view.kind === "coupons") return <CouponsView />;
 	return <NearbyView />;
 }
 

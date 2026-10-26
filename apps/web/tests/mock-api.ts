@@ -113,6 +113,8 @@ export async function mockOlowoApi(page: Page, options: { authenticated?: boolea
 		rideAutomation: null as null | Record<string, unknown>,
 		photoUploads: 0,
 		checkout: null as null | Record<string, unknown>,
+		purchases: [] as Array<{ path: string; body: unknown }>,
+		redeemed: [] as string[],
 		requests: [] as Array<{ method: string; path: string; body: unknown }>
 	};
 
@@ -210,6 +212,55 @@ export async function mockOlowoApi(page: Page, options: { authenticated?: boolea
 						: null;
 					return json({ success: true, activeRide: state.activeRide, automation: state.rideAutomation });
 				}
+				case "POST /v1/plans/51/estimate":
+					return json({
+						contractId: 51,
+						amount: (body as { userCouponId?: number | null }).userCouponId ? 539 : 599,
+						title: "新·騎士",
+						startsAt: "2026-11-01T15:59:59.000Z",
+						endsAt: "2026-12-01T15:59:59.000Z"
+					});
+				case "POST /v1/plans/current/top-ups/5/estimate":
+					return json({ topUpId: 5, minutes: 100, amount: 180 });
+				case "POST /v1/plans/51/purchase":
+				case "POST /v1/plans/current/top-ups/5/purchase":
+					state.purchases.push({ path: url.pathname, body });
+					return json({ success: true });
+				case "DELETE /v1/plans/current/auto-renew":
+					return json({ success: true });
+				case "GET /v1/coupons":
+					return json({
+						coupons: [
+							{
+								id: 41001,
+								name: "小小心意券",
+								description: "購買方案金額 9 折優惠",
+								information: "- 本優惠券限購買方案使用。",
+								scope: "plan",
+								startsAt: "2026-10-01T00:00:00.000Z",
+								endsAt: "2026-12-31T00:00:00.000Z",
+								usedAt: null,
+								state: "usable"
+							},
+							{
+								id: 34781,
+								name: "新註冊體驗優惠",
+								description: "7 天內前 15 分鐘騎乘免費",
+								information: null,
+								scope: "ride",
+								startsAt: "2024-01-23T04:39:08.000Z",
+								endsAt: "2024-01-30T04:39:08.000Z",
+								usedAt: "2024-01-23T05:59:59.000Z",
+								state: "used"
+							}
+						]
+					});
+				case "POST /v1/coupons/redeem": {
+					const code = (body as { code: string }).code;
+					if (code !== "OLOWO10") return json({ code: "UPSTREAM", message: "Unknown coupon code" }, 404);
+					state.redeemed.push(code);
+					return json({ success: true });
+				}
 				case "GET /v1/rides/history":
 					return json({
 						rides: [
@@ -235,6 +286,8 @@ export async function mockOlowoApi(page: Page, options: { authenticated?: boolea
 					return json({
 						region: url.searchParams.get("region"),
 						current: {
+							userContractId: 53393,
+							contractId: 49,
 							name: "月用量 Starter",
 							startsAt: "2026-10-01T18:37:34.000Z",
 							endsAt: "2026-11-01T15:59:59.000Z",
@@ -243,7 +296,10 @@ export async function mockOlowoApi(page: Page, options: { authenticated?: boolea
 							ratePerMinute: 2.4,
 							autoRenew: true,
 							nextPlanName: "月用量 Starter",
-							topUps: [{ minutes: 15, price: 33, tag: null }]
+							topUps: [
+								{ id: 1, minutes: 15, price: 33, tag: null },
+								{ id: 5, minutes: 100, price: 180, tag: "最熱門" }
+							]
 						},
 						plans: [
 							{

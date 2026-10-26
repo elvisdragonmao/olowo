@@ -36,7 +36,7 @@ docker compose up -d --build   # db + api + web（Caddy），預設 http://local
 
 ## 功能
 
-前端從 `/v1/map/stations` 取得以站點分組的車況：地圖只畫站點與電子圍籬，點進車輛才標出它的定位；Email OTP、費率、目前騎乘與預估車資、借還車、還車照片與刷卡結帳、預約（保留 5 分鐘並倒數）與騎乘計時（自動歸還／歸還後重借）皆已接上 staging；結帳流程依 HAR 契約實作，尚未以真實付款驗證。oloo token 只存在 Fastify 記憶體或 PostgreSQL 的 AES-256-GCM 密文中，PWA 只持有 HttpOnly 的不透明 session cookie。provider token 用到一半壽命時，API 會透過 `keep-login` 自動延長；oloo 回 401 時 API 會清掉本機 session，前端回到登入畫面。
+前端從 `/v1/map/stations` 取得以站點分組的車況：地圖只畫站點與電子圍籬，點進車輛才標出它的定位；Email OTP、費率、目前騎乘與預估車資、借還車、還車照片與刷卡結帳、預約（保留 5 分鐘並倒數，次數依 oloo 規定一小時最多 2 次）、騎乘計時（自動歸還／歸還後重借）、騎乘紀錄與訂閱方案（列出校區可訂閱的方案與 oloo 的可否購買判斷，購買仍在官方 App）皆已接上 staging；結帳流程依 HAR 契約實作，尚未以真實付款驗證。oloo token 只存在 Fastify 記憶體或 PostgreSQL 的 AES-256-GCM 密文中，PWA 只持有 HttpOnly 的不透明 session cookie。provider token 用到一半壽命時，API 會透過 `keep-login` 自動延長；oloo 回 401 時 API 會清掉本機 session，前端回到登入畫面。
 
 登入後，fleet adapter 會從 staging 取得車輛資訊、狀態、站點與全站預約，以全域快取共用 25 秒（同時間的多個請求只打一次上游，上游失敗時 5 分鐘內回傳上一份快照），只保留公開欄位並依站點分組後提供給前端；站點資料直接來自 oloo，所以未登入時 `/v1/map/stations` 回 `401 AUTH_REQUIRED`，前端先顯示登入；營運者若設定 `OLOO_ACCESS_TOKEN`，未登入的訪客也能看到站點（只讀）。由於 staging 本身要求 token 同時出現在 raw `Authorization` header 與 `access_token` query，Fastify 只在 server-to-server 請求中做此相容處理，永不把 token 送到瀏覽器。
 

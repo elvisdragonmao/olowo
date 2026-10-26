@@ -55,7 +55,7 @@ Mobile navigation should expose Map, Ride, Activity and Account. Ride replaces i
 
 - Elapsed time and estimated current charge dominate the screen.
 - Return-by target and next billing boundary are visible without scrolling.
-- A rider can choose automatic return or return-and-reborrow after 0:28, 1:28, 2:28 or a custom duration. Destructive choices require an explicit confirmation and remain cancellable before execution.
+- A rider can choose automatic return or return-and-reborrow after 0:30, 0:58, 4:58 or a custom duration. Tapping a timer applies it at once, tapping it again turns it off, and the duration stays editable while it is scheduled. Borrow, return and timers have no confirmation step.
 - Power/lock controls appear only when the current ride and upstream permission allow them.
 - Return readiness checks current ride ownership and vehicle identity before the server sends a return command.
 

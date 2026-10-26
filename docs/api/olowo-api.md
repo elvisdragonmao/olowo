@@ -173,7 +173,7 @@ Requires an `Idempotency-Key` header of at least eight characters.
 }
 ```
 
-`automation` is optional. `action` is `return` or `return_and_reborrow` (the API still accepts `notify`, which the PWA no longer offers); duration is 20 seconds through six hours (the PWA offers 0:28, 1:28, 2:28 or a custom `m:ss`) and is calculated from the provider-confirmed ride start. The API resolves IMEI server-side, starts the rental, reads back the new active ride, and only then creates the timer.
+`automation` is optional. `action` is `return` or `return_and_reborrow` (the API still accepts `notify`, which the PWA no longer offers); duration is 20 seconds through six hours (the PWA offers 0:30, 0:58, 4:58 or a custom `m:ss`) and is calculated from the provider-confirmed ride start. The API resolves IMEI server-side, starts the rental, reads back the new active ride, and only then creates the timer.
 
 ### `POST /v1/rides/:rideId/return`
 
@@ -183,7 +183,7 @@ Requires an `Idempotency-Key` header.
 { "scooterId": 1512, "latitude": 24.7876, "longitude": 120.9972 }
 ```
 
-The coordinates are optional: the PWA sends the phone's location when the rider granted it, otherwise the API uses the scooter's last telemetry fix. Before sending a return command, the server reads the current provider rental and requires both ride ID and scooter ID to match; a mismatch returns `409` without sending the mutation. Like the official client, it then calls oloo `bill?latitude&longitude` first, which fixes the end time and matches the return station, and only then sends `return` (which carries just the IMEI). The response is `{ success, rideId, endedAt, returnStation, locationSource: "rider" | "scooter" | "none" }`.
+The coordinates are optional: the PWA sends the phone's location when the rider granted it, otherwise the API uses the scooter's last telemetry fix. Before sending a return command, the server reads the current provider rental and requires both ride ID and scooter ID to match; a mismatch returns `409` without sending the mutation. That check, the IMEI lookup and (when no fix is cached) a fleet refresh run in parallel, because the end time is fixed when oloo receives the bill request; each return logs `checkMs`, `billMs` and `returnMs`. Timers also warm the fleet cache eight seconds before they fire. Like the official client, it then calls oloo `bill?latitude&longitude` first, which fixes the end time and matches the return station, and only then sends `return` (which carries just the IMEI). The response is `{ success, rideId, endedAt, returnStation, locationSource: "rider" | "scooter" | "none" }`.
 
 ### `GET /v1/rides/:rideId/automation`
 
@@ -204,7 +204,7 @@ Returns `{ "automation": null }` or:
 }
 ```
 
-States are `scheduled`, `running`, `due`, `completed`, `failed`, and `cancelled`. A notification ends in `due`; destructive actions end in `completed` or `failed` and are not retried automatically. The timer is measured from the provider-confirmed ride start ("after 0:28 of riding"), not from when it was set. `return_and_reborrow` returns, uploads the placeholder photo, pays with the rider's first valid card (oloo coin first), and only then rents the same scooter again; any failure stops the chain.
+States are `scheduled`, `running`, `due`, `completed`, `failed`, and `cancelled`. A notification ends in `due`; destructive actions end in `completed` or `failed` and are not retried automatically. The timer is measured from the provider-confirmed ride start ("after 0:58 of riding"), not from when it was set. `return_and_reborrow` returns, uploads the placeholder photo, pays with the rider's first valid card (oloo coin first), and only then rents the same scooter again; any failure stops the chain.
 
 ### `PUT /v1/rides/:rideId/automation`
 
@@ -238,13 +238,25 @@ Requires `Idempotency-Key`; the provider mutation is POST `/reservation/cancel` 
 
 ### `GET /v1/reservations/usage`
 
-Returns `{ reservedLastHour, cancelledThisWeek }` for reservations made through olowo (persisted in `reservation_events` when PostgreSQL is configured). oloo itself limits reservations per hour and suspends reservations after frequent weekly cancellations (the official app's wording: 「這一小時內的預約次數已達上限」「你本週已達 2 天取消預約超過 2 次」); the exact quota is not exposed, so olowo shows the rider's own count and passes oloo's rejection message through. Reservations made in the official app are not counted.
+Returns `{ limitPerHour, reservedLastHour, cancelledLastHour, remaining, nextSlotAt }` computed from oloo's own `/reservation/self-anhour` (the list the official app uses for 「一個小時內你還可預約 N 次」), so reservations made in the official app count too. The rules come from oloo's help centre: a reservation holds the scooter for five minutes and then cancels itself (「預約滑板車後將為您保留5分鐘，逾時則會自動取消」), and a rider may reserve at most twice within an hour (「一小時內車輛預約不能超過兩次」). Frequent cancellations are also refused; the official app's message is 「本週已達2天取消預約超過2次」, and oloo's rejection is passed through unchanged.
+
+`expiresAt` in `current` and `POST /v1/reservations` is always an ISO time. oloo sends `expired` as epoch milliseconds; when it is missing the API uses `createdAt` + 5 minutes.
 
 Scheduled ("reserve in N minutes") reservations are not offered.
 
+## History and plans
+
+### `GET /v1/rides/history`
+
+oloo's `/rental-logs/get-rental-logs-by-account` (the latest 200 rides) as `{ rides: [{ id, label, startedAt, endedAt, durationSeconds, cost, ridingMinutes, parkedMinutes, engineOnSeconds, engineOffSeconds, paid, planName, startStation, endStation }] }`. Account, card, IMEI and invoice fields stay on the server. `engineOnSeconds`/`engineOffSeconds` come from `onOffActionsRecord`; across every ride on the test account oloo billed `normalMinutes = ⌈motor-on time⌉` and `stopMinutes = ⌈motor-off time⌉` separately, and rides returned within about 30 seconds were free.
+
+### `GET /v1/plans?region=`
+
+The plans oloo offers in a region (`oloo-options` → `area_contract_mapping`, `default` when the region is unknown), joined with `/contracts` and `/ride-plans`. Each plan carries oloo's own eligibility from `GET /contracts/can-purchase/:contractId` (`canPurchase`, `reasons`). `current` is the active plan from `/user-contracts/take-self-effect` with remaining minutes, end date, auto-renew and top-up options. Purchasing is not exposed; riders buy in the official app.
+
 ## Return and checkout
 
-oloo bills a returned ride separately. The observed client flow is return → final bill → upload a return photo → `checkout-with-creditcard`. Until checkout succeeds the ride stays unpaid, and an unpaid ride can block the next rental.
+oloo bills a returned ride separately. The observed client flow is bill at the return location → return → `estimate-bill` at the fixed end time → upload a return photo → `checkout-with-creditcard`. The PWA attaches the blank placeholder photo as soon as checkout opens; a real photo is optional. Until checkout succeeds the ride stays unpaid, and an unpaid ride can block the next rental.
 
 ### `GET /v1/rides/:rideId/estimate`
 

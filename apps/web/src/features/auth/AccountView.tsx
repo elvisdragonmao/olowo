@@ -2,6 +2,7 @@ import { ArrowLeft, CaretRight, ClockCounterClockwise, GithubLogo, Percent, Sign
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useUiStore } from "../../app/useUiStore";
 import { apiRequest } from "../../shared/api";
+import { Avatar } from "./Avatar";
 import { LoginForm } from "./LoginForm";
 import { useSession } from "./useSession";
 
@@ -34,9 +35,7 @@ export function AccountView() {
 				{session.data?.authenticated ? (
 					<>
 						<section className="account-card">
-							<span className="avatar" aria-hidden>
-								{session.data.email.slice(0, 1).toUpperCase()}
-							</span>
+							<Avatar email={session.data.email} />
 							<div>
 								<strong>{session.data.email}</strong>
 								<span>登入到 {new Date(session.data.expiresAt).toLocaleDateString("zh-TW")}，使用中會自動延長</span>

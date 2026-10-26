@@ -8,6 +8,7 @@ import { CouponsView } from "./features/account/CouponsView";
 import { HistoryView } from "./features/account/HistoryView";
 import { PlansView } from "./features/account/PlansView";
 import { AccountView } from "./features/auth/AccountView";
+import { Avatar } from "./features/auth/Avatar";
 import { SignInView } from "./features/auth/SignInView";
 import { useSession } from "./features/auth/useSession";
 import { useNeedsSignIn } from "./features/fleet/useFleetQuery";
@@ -69,7 +70,7 @@ function AccountButton() {
 	const email = session.data?.authenticated ? session.data.email : null;
 	return (
 		<button type="button" className="icon-button icon-button-float" aria-label={email ? `帳號 ${email}` : "帳號與登入"} onClick={() => navigate({ kind: "account" })}>
-			{email ? <span className="avatar avatar-small">{email.slice(0, 1).toUpperCase()}</span> : <User size={18} weight="bold" />}
+			{email ? <Avatar email={email} small /> : <User size={18} weight="bold" />}
 		</button>
 	);
 }

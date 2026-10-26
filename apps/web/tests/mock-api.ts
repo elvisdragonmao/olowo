@@ -118,6 +118,8 @@ export async function mockOlowoApi(page: Page, options: { authenticated?: boolea
 		requests: [] as Array<{ method: string; path: string; body: unknown }>
 	};
 
+	// Avatars come from Gravatar; never reach it from tests.
+	await page.route("https://gravatar.com/avatar/**", route => route.fulfill({ contentType: "image/png", body: blankPng }));
 	await page.route(
 		url => url.hostname === "127.0.0.1" && url.pathname.startsWith("/v1/"),
 		async route => {

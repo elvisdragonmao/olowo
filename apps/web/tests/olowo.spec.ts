@@ -299,4 +299,6 @@ test("account credits link to the GitHub repository", async ({ page }) => {
 	await open(page, "/?view=account");
 	await expect(panel(page).getByText(/由 毛哥EM 製作/)).toBeVisible();
 	await expect(panel(page).getByRole("link", { name: /在 GitHub 給顆/ })).toHaveAttribute("href", "https://github.com/elvisdragonmao/olowo");
+	await expect(panel(page).getByRole("link", { name: /在 GitHub 給顆/ })).toHaveCSS("text-decoration-line", "none");
+	await page.screenshot({ path: test.info().outputPath("account.png") });
 });

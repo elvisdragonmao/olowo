@@ -2248,3 +2248,33 @@ code {
 .plan-card[data-other="retired"] {
 	opacity: 0.7;
 }
+
+/* ---------- ride: engine ---------- */
+
+.engine-control {
+	gap: 10px;
+}
+
+.engine-state {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	font-size: 14px;
+}
+
+.engine-dot {
+	width: 8px;
+	height: 8px;
+	border-radius: 999px;
+	background: var(--unavailable);
+}
+
+.engine-control[data-engine="running"] .engine-dot {
+	background: var(--available);
+	box-shadow: 0 0 0 4px var(--available-soft);
+}
+
+.engine-control[data-engine="parked"] .engine-dot {
+	background: var(--low);
+	box-shadow: 0 0 0 4px var(--low-soft);
+}

@@ -9,6 +9,8 @@ export interface ActiveRide {
 	label: string;
 	startedAt: string;
 	cost: number;
+	/** `idle` until first started; `parked` is 臨停. */
+	engine: "idle" | "running" | "parked";
 }
 
 export function useCurrentRide() {

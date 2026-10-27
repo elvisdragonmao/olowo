@@ -1,4 +1,4 @@
-import { ArrowLeft, Power } from "@phosphor-icons/react";
+import { ArrowLeft, Pause, Play, Power } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { useUiStore } from "../../app/useUiStore";
@@ -124,6 +124,8 @@ function RideDetail({ ride }: { ride: ActiveRide }) {
 				</span>
 			</section>
 
+			<EngineControl ride={ride} />
+
 			<section className="section">
 				<h3 className="section-title">騎乘計時</h3>
 				<TimerControl
@@ -164,5 +166,47 @@ function RideDetail({ ride }: { ride: ActiveRide }) {
 				{returnRide.error ? <p className="inline-error">歸還失敗，車輛仍在騎乘中：{returnRide.error.message}</p> : null}
 			</section>
 		</>
+	);
+}
+
+const engineActions = {
+	idle: { action: "start", label: "啟動", hint: "借到車後先啟動，車子才會通電可以騎。", icon: Play },
+	running: { action: "park", label: "臨停", hint: "熄火上鎖，車子還是你的；臨停時間照樣計費。", icon: Pause },
+	parked: { action: "start", label: "重新啟動", hint: "按重新啟動就能繼續騎。", icon: Play }
+} as const;
+
+/** Only the one engine command that applies now: 啟動 before the first start, then 臨停 or 重新啟動. */
+function EngineControl({ ride }: { ride: ActiveRide }) {
+	const queryClient = useQueryClient();
+	const now = useNow();
+	// oloo's on/off record can lag the command by a few seconds; hold the confirmed state until it catches up.
+	const [confirmed, setConfirmed] = useState<{ engine: ActiveRide["engine"]; until: number } | null>(null);
+	const reported = ride.engine ?? "idle";
+	const engine = confirmed && now < confirmed.until && reported !== confirmed.engine ? confirmed.engine : reported;
+	const next = engineActions[engine];
+	const command = useMutation({
+		mutationFn: () => apiRequest<{ engine: ActiveRide["engine"] }>(`/v1/rides/${ride.id}/engine`, { method: "POST", body: JSON.stringify({ action: next.action }) }),
+		onSuccess: data => {
+			setConfirmed({ engine: data.engine, until: Date.now() + 20_000 });
+			void queryClient.invalidateQueries({ queryKey: ["ride"] });
+		}
+	});
+	const Icon = next.icon;
+	return (
+		<section className="section engine-control" data-engine={engine}>
+			<div className="engine-state">
+				<span className="engine-dot" aria-hidden />
+				<strong>{engine === "running" ? "行駛中" : engine === "parked" ? "臨停中" : "尚未啟動"}</strong>
+			</div>
+			<button type="button" className={engine === "running" ? "button button-quiet button-block" : "button button-primary button-block"} onClick={() => command.mutate()} disabled={command.isPending}>
+				<Icon size={16} weight="fill" aria-hidden /> {command.isPending ? `${next.label}中…` : next.label}
+			</button>
+			<p className="muted small">{next.hint}</p>
+			{command.error ? (
+				<p className="inline-error">
+					{next.label}失敗：{command.error.message}
+				</p>
+			) : null}
+		</section>
 	);
 }

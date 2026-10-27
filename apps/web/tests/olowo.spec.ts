@@ -204,6 +204,18 @@ test("reserve with a countdown, borrow with a timer, return, photo and pay", asy
 	expect(rent?.body).toMatchObject({ scooterId: 1512, reservationId: 55, automation: { action: "return_and_reborrow", afterRideSeconds: 30 } });
 	await expect(panel(page).getByText(/騎乘滿 30 秒 時歸還後重借 · 還有/)).toBeVisible();
 
+	// Only the engine command that applies is shown: 啟動 → 臨停 → 重新啟動.
+	await expect(panel(page).getByText("尚未啟動", { exact: true })).toBeVisible();
+	await expect(panel(page).getByRole("button", { name: "臨停" })).toHaveCount(0);
+	await panel(page).getByRole("button", { name: "啟動", exact: true }).click();
+	await expect(panel(page).getByText("行駛中", { exact: true })).toBeVisible();
+	await expect(panel(page).getByRole("button", { name: "啟動", exact: true })).toHaveCount(0);
+	await panel(page).getByRole("button", { name: "臨停" }).click();
+	await expect(panel(page).getByText("臨停中", { exact: true })).toBeVisible();
+	await panel(page).getByRole("button", { name: "重新啟動" }).click();
+	await expect(panel(page).getByText("行駛中", { exact: true })).toBeVisible();
+	expect(api.requests.filter(request => request.path === "/v1/rides/9123/engine").map(request => request.body)).toEqual([{ action: "start" }, { action: "park" }, { action: "start" }]);
+
 	await expand();
 	await panel(page)
 		.getByRole("button", { name: /自動歸還/ })

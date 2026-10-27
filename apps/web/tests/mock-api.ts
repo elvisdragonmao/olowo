@@ -102,7 +102,7 @@ export async function mockMapbox(page: Page, options: { realTiles?: boolean } = 
 	await page.route("https://tiles.e2e.test/**", route => route.fulfill({ contentType: "image/png", body: blankPng }));
 }
 
-type Ride = { id: number; scooterId: number; label: string; startedAt: string; cost: number };
+type Ride = { id: number; scooterId: number; label: string; startedAt: string; cost: number; engine?: "idle" | "running" | "parked" };
 
 /** A made-up year of rides relative to now: mostly short campus hops, some free reborrow loops. */
 export function generatedHistory(count = 160) {
@@ -245,7 +245,7 @@ export async function mockOlowoApi(page: Page, options: { authenticated?: boolea
 					return json({ success: true });
 				case "POST /v1/rides": {
 					state.reservation = null;
-					state.activeRide = { id: 9123, scooterId: 1512, label: "JZ-333", startedAt: now(), cost: 0 };
+					state.activeRide = { id: 9123, scooterId: 1512, label: "JZ-333", startedAt: now(), cost: 0, engine: "idle" };
 					const automation = (body as { automation?: { action: string; afterRideSeconds: number } }).automation;
 					state.rideAutomation = automation
 						? { id: "ride-task", rideId: 9123, scooterId: 1512, action: automation.action, triggerAt: new Date(Date.now() + automation.afterRideSeconds * 1000).toISOString(), state: "scheduled" }
@@ -426,6 +426,11 @@ export async function mockOlowoApi(page: Page, options: { authenticated?: boolea
 					return json({ estimate: { cost: 4, ridingMinutes: 1, parkedMinutes: 0, ratePerMinute: 2.4 } });
 				case "GET /v1/rides/9123/automation":
 					return json({ automation: state.rideAutomation });
+				case "POST /v1/rides/9123/engine": {
+					const engine = (body as { action: string }).action === "start" ? "running" : "parked";
+					if (state.activeRide) state.activeRide.engine = engine;
+					return json({ success: true, engine });
+				}
 				case "PUT /v1/rides/9123/automation": {
 					const requestBody = body as { action: string; afterRideSeconds: number };
 					state.rideAutomation = {

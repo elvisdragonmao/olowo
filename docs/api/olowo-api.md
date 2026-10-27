@@ -149,12 +149,17 @@ Authenticated proxy for the provider's possible/basic/station plan result. This 
 		"scooterId": 1512,
 		"label": "AA-001",
 		"startedAt": "2026-10-25T12:00:00.000Z",
-		"cost": 0
+		"cost": 0,
+		"engine": "running"
 	}
 }
 ```
 
-`activeRide` is `null` when the latest rental has an end time.
+`activeRide` is `null` when the latest rental has an end time. `engine` comes from the ride's `onOffActionsRecord`, which opens with one `off` and gains an entry on every start and park: `idle` before the first `on`, then `running` or `parked` (臨停) by the last entry.
+
+### `POST /v1/rides/:rideId/engine`
+
+`{ "action": "start" | "park" }` → `{ success, engine }`. Sends the official app's `POST /scooter-statuses/update-status` with `{ commandType: "unlock" | "lock", imei, parameters: "{ \"uid\": <accountId> }" }`: `unlock` powers the scooter on (啟動, and 重新啟動 after 臨停), `lock` parks it with the motor off. `409` when the ride is not the active one. oloo's on/off record can lag the command by a few seconds, so the PWA holds the confirmed state until `GET /v1/rides/current` catches up.
 
 ## Borrow and return
 

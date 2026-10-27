@@ -204,17 +204,17 @@ test("reserve with a countdown, borrow with a timer, return, photo and pay", asy
 	expect(rent?.body).toMatchObject({ scooterId: 1512, reservationId: 55, automation: { action: "return_and_reborrow", afterRideSeconds: 30 } });
 	await expect(panel(page).getByText(/騎乘滿 30 秒 時歸還後重借 · 還有/)).toBeVisible();
 
-	// Only the engine command that applies is shown: 啟動 → 臨停 → 重新啟動.
-	await expect(panel(page).getByText("尚未啟動", { exact: true })).toBeVisible();
-	await expect(panel(page).getByRole("button", { name: "臨停" })).toHaveCount(0);
-	await panel(page).getByRole("button", { name: "啟動", exact: true }).click();
+	// The rented scooter is already started; only the commands that apply are shown.
 	await expect(panel(page).getByText("行駛中", { exact: true })).toBeVisible();
 	await expect(panel(page).getByRole("button", { name: "啟動", exact: true })).toHaveCount(0);
 	await panel(page).getByRole("button", { name: "臨停" }).click();
 	await expect(panel(page).getByText("臨停中", { exact: true })).toBeVisible();
+	await expect(panel(page).getByRole("button", { name: "重新啟動" })).toHaveCount(0);
+	await panel(page).getByRole("button", { name: "啟動", exact: true }).click();
+	await expect(panel(page).getByText("行駛中", { exact: true })).toBeVisible();
 	await panel(page).getByRole("button", { name: "重新啟動" }).click();
 	await expect(panel(page).getByText("行駛中", { exact: true })).toBeVisible();
-	expect(api.requests.filter(request => request.path === "/v1/rides/9123/engine").map(request => request.body)).toEqual([{ action: "start" }, { action: "park" }, { action: "start" }]);
+	expect(api.requests.filter(request => request.path === "/v1/rides/9123/engine").map(request => request.body)).toEqual([{ action: "park" }, { action: "start" }, { action: "restart" }]);
 
 	await expand();
 	await panel(page)
@@ -359,4 +359,22 @@ test("騎乘分析 opens in its own page and re-slices every chart by the chosen
 	expect(layout.scrollWidth).toBeLessThanOrEqual(layout.width);
 	await insights.screenshot({ path: test.info().outputPath("insights.png"), fullPage: true });
 	expect(errors).toEqual([]);
+});
+
+test("a timed reborrow stays on the ride view and picks up the new ride", async ({ page }) => {
+	const { api, errors } = await open(page, "/?view=ride");
+	// The server has returned and paid the old ride and is renting again: no active ride, an unpaid one, reborrowing.
+	api.activeRide = null;
+	api.unpaidRide = { id: 9122, scooterId: 1512, label: "JZ-333", startedAt: new Date(Date.now() - 40_000).toISOString(), endedAt: new Date().toISOString(), cost: 0 };
+	api.reborrowing = true;
+	await expect(panel(page).getByText("已歸還並結帳，正在重新借同一台車…")).toBeVisible();
+	await page.waitForTimeout(2_000);
+	await expect(page).toHaveURL(/view=ride/);
+	api.unpaidRide = null;
+	api.reborrowing = false;
+	api.activeRide = { id: 9124, scooterId: 1512, label: "JZ-333", startedAt: new Date().toISOString(), cost: 0, engine: "running" };
+	await expect(panel(page).getByText("行駛中", { exact: true })).toBeVisible({ timeout: 6_000 });
+	await expect(page).toHaveURL(/view=ride/);
+	// The mock only prices and times ride 9123, so the new ride's side requests answer 404.
+	expect(errors.filter(error => !/401|404/.test(error))).toEqual([]);
 });

@@ -151,6 +151,7 @@ export async function mockOlowoApi(page: Page, options: { authenticated?: boolea
 		rideAutomation: null as null | Record<string, unknown>,
 		photoUploads: 0,
 		checkout: null as null | Record<string, unknown>,
+		reborrowing: false,
 		purchases: [] as Array<{ path: string; body: unknown }>,
 		redeemed: [] as string[],
 		requests: [] as Array<{ method: string; path: string; body: unknown }>
@@ -230,7 +231,7 @@ export async function mockOlowoApi(page: Page, options: { authenticated?: boolea
 					return code === "JZ333" ? json({ scooterId: 1512, stationId: 101, label: "JZ-333" }) : json({ code: "SCOOTER_NOT_FOUND", message: "這不是 oloo 車輛的 QR Code 或車號" }, 404);
 				}
 				case "GET /v1/rides/current":
-					return json({ activeRide: state.activeRide });
+					return json({ activeRide: state.activeRide, reborrowing: state.reborrowing });
 				case "GET /v1/rides/unpaid":
 					return json({ ride: state.unpaidRide });
 				case "GET /v1/reservations/current":
@@ -245,7 +246,7 @@ export async function mockOlowoApi(page: Page, options: { authenticated?: boolea
 					return json({ success: true });
 				case "POST /v1/rides": {
 					state.reservation = null;
-					state.activeRide = { id: 9123, scooterId: 1512, label: "JZ-333", startedAt: now(), cost: 0, engine: "idle" };
+					state.activeRide = { id: 9123, scooterId: 1512, label: "JZ-333", startedAt: now(), cost: 0, engine: "running" };
 					const automation = (body as { automation?: { action: string; afterRideSeconds: number } }).automation;
 					state.rideAutomation = automation
 						? { id: "ride-task", rideId: 9123, scooterId: 1512, action: automation.action, triggerAt: new Date(Date.now() + automation.afterRideSeconds * 1000).toISOString(), state: "scheduled" }
@@ -427,7 +428,7 @@ export async function mockOlowoApi(page: Page, options: { authenticated?: boolea
 				case "GET /v1/rides/9123/automation":
 					return json({ automation: state.rideAutomation });
 				case "POST /v1/rides/9123/engine": {
-					const engine = (body as { action: string }).action === "start" ? "running" : "parked";
+					const engine = (body as { action: string }).action === "park" ? "parked" : "running";
 					if (state.activeRide) state.activeRide.engine = engine;
 					return json({ success: true, engine });
 				}

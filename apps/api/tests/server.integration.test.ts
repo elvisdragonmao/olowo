@@ -16,7 +16,16 @@ let providerAuthChecks = 0;
 let keepLoginCalls = 0;
 let revokeRides = false;
 const seenTokens = new Set<string>();
-type RentalLog = { id: number; scootersInfoId: number; engineLicenseNumber: string; lastRentalStartedAt: string; lastRentalEndedAt: string | null; cost: number; isPaid: boolean | null };
+type RentalLog = {
+	id: number;
+	scootersInfoId: number;
+	engineLicenseNumber: string;
+	lastRentalStartedAt: string;
+	lastRentalEndedAt: string | null;
+	cost: number;
+	isPaid: boolean | null;
+	onOffActionsRecord?: string;
+};
 let activeRide: RentalLog | null = null;
 let lastRide: RentalLog | null = null;
 let checkoutBody: Record<string, unknown> | null = null;
@@ -29,6 +38,7 @@ let billLocation: string | null = null;
 let estimateEndedAt: string | null = null;
 let reservation: Record<string, unknown> | null = null;
 const purchases: Array<{ path: string; body: string }> = [];
+const engineCommands: Array<Record<string, unknown>> = [];
 
 function json(response: ServerResponse, value: unknown, status = 200) {
 	response.writeHead(status, { "content-type": "application/json" });
@@ -101,6 +111,16 @@ async function providerHandler(request: IncomingMessage, response: ServerRespons
 	if (path === "/scooter-statuses") return json(response, [{ imei: "private-imei", latitude: 24.79315, longitude: 120.99327, power: 84, errorMsg: null, updatedAt: new Date().toISOString() }]);
 	if (path === "/scooters-infos/get-possible-ride-plan/12") return json(response, { basicOrStationRidePlan: { id: 73, name: "普通費率", minMinute: 30, minPrice: 60, normalRate: 2 } });
 	if (path === "/rental-logs/get-last-rental-log-by-account") return json(response, lastRide ? [lastRide] : []);
+	if (path === "/scooter-statuses/update-status") {
+		const command = JSON.parse(await readBody(request)) as { commandType: string };
+		engineCommands.push(command);
+		// oloo appends to the ride's on/off record as the scooter reports back.
+		if (activeRide) {
+			const record = JSON.parse(activeRide.onOffActionsRecord ?? '[{"type":"off","totalTime":0}]') as unknown[];
+			activeRide.onOffActionsRecord = JSON.stringify([...record, { type: command.commandType === "unlock" ? "on" : "off", totalTime: 1000 }]);
+		}
+		return json(response, { success: true });
+	}
 	if (
 		[
 			"/scooters-infos/bill",
@@ -360,6 +380,19 @@ test("Fastify completes the authenticated ride and reservation workflow", async 
 	const rent = (await response.json()) as { activeRide: { id: number }; automation: { state: string } };
 	assert.equal(rent.activeRide.id, 9001);
 	assert.equal(rent.automation.state, "scheduled");
+
+	const engine = async () => ((await (await api("/v1/rides/current")).json()) as { activeRide: { engine: string } }).activeRide.engine;
+	assert.equal(await engine(), "idle", "a fresh ride has not been started");
+	response = await api("/v1/rides/9001/engine", { method: "POST", body: JSON.stringify({ action: "start" }) });
+	assert.deepEqual(await response.json(), { success: true, engine: "running" });
+	assert.equal(await engine(), "running");
+	response = await api("/v1/rides/9001/engine", { method: "POST", body: JSON.stringify({ action: "park" }) });
+	assert.equal(await engine(), "parked");
+	assert.deepEqual(engineCommands, [
+		{ commandType: "unlock", imei: "private-imei", parameters: '{ "uid": 115827 }' },
+		{ commandType: "lock", imei: "private-imei", parameters: '{ "uid": 115827 }' }
+	]);
+	assert.equal((await api("/v1/rides/9999/engine", { method: "POST", body: JSON.stringify({ action: "start" }) })).status, 409);
 
 	response = await api("/v1/rides/9999/return", { method: "POST", headers: { "idempotency-key": "wrong-ride-key" }, body: JSON.stringify({ scooterId: 12 }) });
 	assert.equal(response.status, 409);

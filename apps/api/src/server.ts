@@ -63,12 +63,35 @@ const returnedRides = new Map<number, { endedAt: string; returnStation: string |
 const refreshes = new Map<number, Promise<void>>();
 const lastRefreshAttempt = new Map<number, number>();
 
+/** `idle` until the rider first starts the scooter, then `running` or `parked` (臨停, billed at the parked rate). */
+type EngineState = "idle" | "running" | "parked";
+
 interface ActiveRide {
 	id: number;
 	scooterId: number;
 	label: string;
 	startedAt: string;
 	cost: number;
+	engine: EngineState;
+}
+
+/** From the ride's `onOffActionsRecord`, which oloo appends to on every start and park; it opens with one `off`. */
+function engineState(record: unknown): EngineState {
+	let actions: unknown = record;
+	if (typeof record === "string") {
+		try {
+			actions = JSON.parse(record);
+		} catch {
+			return "idle";
+		}
+	}
+	const types = z
+		.array(z.object({ type: z.string() }).passthrough())
+		.catch([])
+		.parse(actions)
+		.map(action => action.type);
+	if (!types.includes("on")) return "idle";
+	return types.at(-1) === "on" ? "running" : "parked";
 }
 
 function setSessionCookie(reply: FastifyReply, session: ProviderSession) {
@@ -179,7 +202,8 @@ async function getActiveRide(session: ProviderSession): Promise<ActiveRide | nul
 		scooterId: parsed.data.scootersInfoId,
 		label: parsed.data.engineLicenseNumber,
 		startedAt: parsed.data.lastRentalStartedAt,
-		cost: parsed.data.cost
+		cost: parsed.data.cost,
+		engine: engineState(ride.onOffActionsRecord)
 	};
 }
 
@@ -400,6 +424,30 @@ app.post("/v1/rides/:rideId/return", async (request, reply) => {
 		return { success: returned.success, rideId, endedAt: returned.endedAt, returnStation: returned.returnStation, locationSource: returned.locationSource };
 	});
 	return reply.send(result);
+});
+
+// 啟動 / 臨停 / 重新啟動, as the official app sends them: `unlock` powers the scooter on, `lock` parks it.
+app.post("/v1/rides/:rideId/engine", async (request, reply) => {
+	const session = await getSession(request, reply);
+	if (!session) return reply.code(401).send({ code: "AUTH_REQUIRED", message: "Please sign in" });
+	const { rideId } = z.object({ rideId: z.coerce.number().int().positive() }).parse(request.params);
+	const { action } = z.object({ action: z.enum(["start", "park"]) }).parse(request.body);
+	const ride = await getActiveRide(session);
+	if (!ride || ride.id !== rideId) throw new OlooUpstreamError(409, "This ride is not active");
+	const scooter = await resolveScooter(session, ride.scooterId);
+	requireSuccess(
+		z
+			.object({ success: z.boolean().optional() })
+			.passthrough()
+			.parse(
+				(await olooRequest<unknown>(environment.OLOO_API_BASE_URL, "/scooter-statuses/update-status", session.accessToken, {
+					method: "POST",
+					body: JSON.stringify({ commandType: action === "start" ? "unlock" : "lock", imei: scooter.imei, parameters: `{ "uid": ${session.userId} }` })
+				})) ?? {}
+			),
+		action === "start" ? "oloo could not start the scooter" : "oloo could not park the scooter"
+	);
+	return reply.send({ success: true, engine: action === "start" ? "running" : "parked" });
 });
 
 app.get("/v1/rides/:rideId/automation", async (request, reply) => {

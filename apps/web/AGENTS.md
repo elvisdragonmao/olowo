@@ -20,7 +20,7 @@ olowo is a real, responsive oloo client for phones and desktops. It is not a pho
 - No battery or availability filters. The station list is campus-scoped (search reaches all campuses), sorted by distance with stations that have nothing to borrow at the bottom.
 - Borrowing offers two buttons: 「立即借用」 and 「預約 5 分鐘」 (with a countdown, also in the dock). Reservation limits quote oloo's own rules and counts (`/v1/reservations/usage`); never invent quotas.
 - Ride timers offer only 自動歸還 and 歸還後重借 at 0:30, 0:58, 4:58 or a custom duration. They are toggles that apply on tap and stay editable; nothing asks for a second confirmation.
-- The ride view shows only the engine command that applies: 「啟動」 before the first start, then 「臨停」 while running and 「重新啟動」 while parked (`POST /v1/rides/:rideId/engine`).
+- A rented or reborrowed scooter is started by the API. The ride view shows only the engine commands that apply (`POST /v1/rides/:rideId/engine`): 「臨停」 and 「重新啟動」 (park, then start) while running, 「啟動」 while parked or if the automatic start failed. During a timed reborrow the ride view waits for the new ride (`reborrowing`) instead of opening checkout.
 - After return the rider goes straight to checkout with the blank photo already attached (「還車照片（可選）」); a real photo can replace it.
 - The account view links to 騎乘紀錄 (`?view=history`), 訂閱方案 (`?view=plans`) and 優惠券 (`?view=coupons`), and ends with the credits (毛哥EM, GitHub link).
 - Buying a plan or a top-up always shows oloo's estimate (amount, start and end) before 「付款」; that step is the price, not a confirmation dialog. Only plans some region offers are sold; hidden campaign or staff plans are not.

@@ -159,9 +159,9 @@ Authenticated proxy for the provider's possible/basic/station plan result. This 
 
 ### `POST /v1/rides/:rideId/engine`
 
-`{ "action": "start" | "park" }` → `{ success, engine }`. Sends the official app's `POST /scooter-statuses/update-status` with `{ commandType: "unlock" | "lock", imei, parameters: "{ \"uid\": <accountId> }" }`: `unlock` powers the scooter on (啟動, and 重新啟動 after 臨停), `lock` parks it with the motor off. `409` when the ride is not the active one. oloo's on/off record can lag the command by a few seconds, so the PWA holds the confirmed state until `GET /v1/rides/current` catches up.
+`{ "action": "start" | "park" | "restart" }` → `{ success, engine }`. Sends the official app's `POST /scooter-statuses/update-status` with `{ commandType: "unlock" | "lock", imei, parameters: "{ \"uid\": <accountId> }" }`: `unlock` powers the scooter on (啟動), `lock` parks it with the motor off (臨停). `restart` (重新啟動) sends `lock`, waits two seconds as the official app's own park-and-start did, then `unlock`. `409` when the ride is not the active one. oloo's on/off record can lag the command by a few seconds, so the PWA holds the confirmed state until `GET /v1/rides/current` catches up.
 
-## Borrow and return
+`POST /v1/rides` and the return-and-reborrow timer send `unlock` as soon as the new ride is visible, so a rented scooter is ready to ride; if that command fails the ride stays `idle` and the PWA offers 啟動. `GET /v1/rides/current` also answers `reborrowing: true` while a reborrow is between returning the old ride and starting the new one, so the PWA waits instead of opening checkout.
 
 ### `POST /v1/rides`
 

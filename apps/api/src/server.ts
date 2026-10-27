@@ -213,6 +213,33 @@ async function getCurrentReservations(session: ProviderSession) {
 	return value && typeof value === "object" && Object.keys(value).length > 0 ? [value] : [];
 }
 
+/** The official app's engine command: `unlock` powers the scooter on, `lock` parks it with the motor off. */
+async function sendEngineCommand(session: ProviderSession, imei: string, command: "unlock" | "lock") {
+	requireSuccess(
+		z
+			.object({ success: z.boolean().optional() })
+			.passthrough()
+			.parse(
+				(await olooRequest<unknown>(environment.OLOO_API_BASE_URL, "/scooter-statuses/update-status", session.accessToken, {
+					method: "POST",
+					body: JSON.stringify({ commandType: command, imei, parameters: `{ "uid": ${session.userId} }` })
+				})) ?? {}
+			),
+		command === "unlock" ? "oloo could not start the scooter" : "oloo could not park the scooter"
+	);
+}
+
+/** Starts a freshly rented scooter so the rider can ride at once; a failure leaves the ride `idle` for the 啟動 button. */
+async function startRentedScooter(session: ProviderSession, imei: string, ride: ActiveRide): Promise<ActiveRide> {
+	try {
+		await sendEngineCommand(session, imei, "unlock");
+		return { ...ride, engine: "running" };
+	} catch (error) {
+		app.log.warn({ err: error, rideId: ride.id }, "could not start the rented scooter");
+		return ride;
+	}
+}
+
 async function waitForActiveRide(session: ProviderSession, scooterId: number) {
 	for (let attempt = 0; attempt < 5; attempt += 1) {
 		const ride = await getActiveRide(session);
@@ -301,6 +328,7 @@ function startRideAutomation(
 				body: JSON.stringify({ imei: returned.scooter.imei, reservationId: null })
 			});
 			requireSuccess(reborrowed, "Returned, but oloo rejected the reborrow");
+			await startRentedScooter(session, returned.scooter.imei, await waitForActiveRide(session, task.scooterId));
 		}
 	});
 }
@@ -371,7 +399,8 @@ app.get("/v1/scooters/:scooterId/ride-plan", async (request, reply) => {
 app.get("/v1/rides/current", async (request, reply) => {
 	const session = await getSession(request, reply);
 	if (!session) return reply.code(401).send({ code: "AUTH_REQUIRED", message: "Please sign in" });
-	return reply.send({ activeRide: await getActiveRide(session) });
+	// While a reborrow runs there is briefly no active ride; `reborrowing` tells the PWA to wait for the new one.
+	return reply.send({ activeRide: await getActiveRide(session), reborrowing: rideAutomations.reborrowing(session.userId) });
 });
 
 app.post("/v1/rides", async (request, reply) => {
@@ -403,7 +432,7 @@ app.post("/v1/rides", async (request, reply) => {
 			}),
 			"oloo rejected the rental"
 		);
-		const ride = await waitForActiveRide(session, scooter.id);
+		const ride = await startRentedScooter(session, scooter.imei, await waitForActiveRide(session, scooter.id));
 		const automation = body.automation ? scheduleRideAutomation(session, ride, body.automation.action, body.automation.afterRideSeconds) : null;
 		if (automation) await scheduledActions.saveRide(automation);
 		return { success: true, scooterId: scooter.id, label: scooter.EngineLicenseNumber, activeRide: ride, automation: publicAutomation(automation) };
@@ -426,28 +455,22 @@ app.post("/v1/rides/:rideId/return", async (request, reply) => {
 	return reply.send(result);
 });
 
-// 啟動 / 臨停 / 重新啟動, as the official app sends them: `unlock` powers the scooter on, `lock` parks it.
+// 啟動 and 臨停 as the official app sends them; 重新啟動 parks and starts again in one go.
 app.post("/v1/rides/:rideId/engine", async (request, reply) => {
 	const session = await getSession(request, reply);
 	if (!session) return reply.code(401).send({ code: "AUTH_REQUIRED", message: "Please sign in" });
 	const { rideId } = z.object({ rideId: z.coerce.number().int().positive() }).parse(request.params);
-	const { action } = z.object({ action: z.enum(["start", "park"]) }).parse(request.body);
+	const { action } = z.object({ action: z.enum(["start", "park", "restart"]) }).parse(request.body);
 	const ride = await getActiveRide(session);
 	if (!ride || ride.id !== rideId) throw new OlooUpstreamError(409, "This ride is not active");
 	const scooter = await resolveScooter(session, ride.scooterId);
-	requireSuccess(
-		z
-			.object({ success: z.boolean().optional() })
-			.passthrough()
-			.parse(
-				(await olooRequest<unknown>(environment.OLOO_API_BASE_URL, "/scooter-statuses/update-status", session.accessToken, {
-					method: "POST",
-					body: JSON.stringify({ commandType: action === "start" ? "unlock" : "lock", imei: scooter.imei, parameters: `{ "uid": ${session.userId} }` })
-				})) ?? {}
-			),
-		action === "start" ? "oloo could not start the scooter" : "oloo could not park the scooter"
-	);
-	return reply.send({ success: true, engine: action === "start" ? "running" : "parked" });
+	if (action === "restart") {
+		await sendEngineCommand(session, scooter.imei, "lock");
+		// The official app's own park-then-start took two seconds; give the scooter that long to settle.
+		await new Promise(resolve => setTimeout(resolve, 2_000));
+	}
+	await sendEngineCommand(session, scooter.imei, action === "park" ? "lock" : "unlock");
+	return reply.send({ success: true, engine: action === "park" ? "parked" : "running" });
 });
 
 app.get("/v1/rides/:rideId/automation", async (request, reply) => {

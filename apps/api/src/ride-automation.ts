@@ -67,6 +67,12 @@ export class RideAutomationStore {
 		return this.#automations.get(`${userId}:${rideId}`) ?? null;
 	}
 
+	/** True while a return-and-reborrow is between returning the old ride and starting the new one. */
+	reborrowing(userId: number) {
+		for (const automation of this.#automations.values()) if (automation.userId === userId && automation.action === "return_and_reborrow" && automation.state === "running") return true;
+		return false;
+	}
+
 	cancel(userId: number, rideId: number) {
 		const automation = this.get(userId, rideId);
 		if (!automation) return false;

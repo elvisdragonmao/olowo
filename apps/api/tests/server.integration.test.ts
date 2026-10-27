@@ -382,16 +382,16 @@ test("Fastify completes the authenticated ride and reservation workflow", async 
 	assert.equal(rent.automation.state, "scheduled");
 
 	const engine = async () => ((await (await api("/v1/rides/current")).json()) as { activeRide: { engine: string } }).activeRide.engine;
-	assert.equal(await engine(), "idle", "a fresh ride has not been started");
-	response = await api("/v1/rides/9001/engine", { method: "POST", body: JSON.stringify({ action: "start" }) });
-	assert.deepEqual(await response.json(), { success: true, engine: "running" });
-	assert.equal(await engine(), "running");
+	assert.equal(await engine(), "running", "a rented scooter is started straight away");
 	response = await api("/v1/rides/9001/engine", { method: "POST", body: JSON.stringify({ action: "park" }) });
+	assert.deepEqual(await response.json(), { success: true, engine: "parked" });
 	assert.equal(await engine(), "parked");
-	assert.deepEqual(engineCommands, [
-		{ commandType: "unlock", imei: "private-imei", parameters: '{ "uid": 115827 }' },
-		{ commandType: "lock", imei: "private-imei", parameters: '{ "uid": 115827 }' }
-	]);
+	response = await api("/v1/rides/9001/engine", { method: "POST", body: JSON.stringify({ action: "start" }) });
+	assert.equal(await engine(), "running");
+	response = await api("/v1/rides/9001/engine", { method: "POST", body: JSON.stringify({ action: "restart" }) });
+	assert.deepEqual(await response.json(), { success: true, engine: "running" });
+	const command = (commandType: string) => ({ commandType, imei: "private-imei", parameters: '{ "uid": 115827 }' });
+	assert.deepEqual(engineCommands, [command("unlock"), command("lock"), command("unlock"), command("lock"), command("unlock")], "重新啟動 parks, then starts again");
 	assert.equal((await api("/v1/rides/9999/engine", { method: "POST", body: JSON.stringify({ action: "start" }) })).status, 409);
 
 	response = await api("/v1/rides/9999/return", { method: "POST", headers: { "idempotency-key": "wrong-ride-key" }, body: JSON.stringify({ scooterId: 12 }) });
@@ -440,12 +440,17 @@ test("Fastify completes the authenticated ride and reservation workflow", async 
 	assert.equal(response.status, 200);
 	providerLog.length = 0;
 	uploadedPhoto = "";
-	for (let waited = 0; waited < 20_000 && activeRide?.id !== 9003; waited += 250) await new Promise(resolve => setTimeout(resolve, 250));
+	engineCommands.length = 0;
+	const reborrowState = async () => ((await (await api("/v1/rides/9002/automation")).json()) as { automation: { state: string } }).automation.state;
+	for (let waited = 0; waited < 20_000 && (await reborrowState()) !== "completed"; waited += 250) await new Promise(resolve => setTimeout(resolve, 250));
 	assert.deepEqual(providerLog, ["bill", "return", "upload", "checkout-with-creditcard", "new-rent"]);
 	assert.ok(uploadedPhoto.includes("\x89PNG") && /filename="9002-[^"]+\.png"/.test(uploadedPhoto), "the placeholder PNG is uploaded for the returned ride");
 	assert.equal(checkoutBody?.rentalLogId, 9002);
 	assert.equal(checkoutBody?.selectedCard, 154060);
 	assert.equal(activeRide?.id, 9003, "the same scooter is borrowed again");
+	assert.deepEqual(engineCommands, [command("unlock")], "the reborrowed scooter is started too");
+	const reborrowed = (await (await api("/v1/rides/current")).json()) as { activeRide: { id: number; engine: string }; reborrowing: boolean };
+	assert.deepEqual([reborrowed.activeRide.id, reborrowed.activeRide.engine, reborrowed.reborrowing], [9003, "running", false]);
 	const automation = (await (await api("/v1/rides/9002/automation")).json()) as { automation: { state: string } };
 	assert.equal(automation.automation.state, "completed");
 	rideStartOffsetMs = 0;
